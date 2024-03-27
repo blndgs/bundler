@@ -9,6 +9,7 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
+	"unsafe"
 
 	"github.com/dgraph-io/badger/v3"
 	"github.com/ethereum/go-ethereum/common"
@@ -36,6 +37,7 @@ import (
 	"go.opentelemetry.io/otel"
 
 	"github.com/blndgs/bundler/conf"
+	"github.com/blndgs/bundler/validations"
 )
 
 func main() {
@@ -86,7 +88,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	check := checks.New(
+	validator := validations.New(
 		db,
 		rpcClient,
 		gas.NewDefaultOverhead(),
@@ -123,7 +125,7 @@ func main() {
 	c.UseModules(
 		rep.CheckStatus(),
 		rep.ValidateOpLimit(),
-		check.ValidateOpValues(),
+		validator.OpValues(),
 		// Omit simulation
 		rep.IncOpsSeen(),
 	)
@@ -136,11 +138,12 @@ func main() {
 	if err := b.UserMeter(otel.GetMeterProvider().Meter("bundler")); err != nil {
 		log.Fatal(err)
 	}
+
+	var check = (*checks.Standalone)(unsafe.Pointer(validator))
 	b.UseModules(
 		exp.DropExpired(),
 		batch.SortByNonce(),
 		batch.MaintainGasLimit(values.MaxBatchGasLimit),
-		check.CodeHashes(),
 		relayer.SendUserOperation(),
 		rep.IncOpsIncluded(),
 		check.Clean(),
