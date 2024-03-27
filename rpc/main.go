@@ -41,11 +41,10 @@ import (
 func main() {
 	values := conf.GetValues()
 
-	// Create a new context
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Set up a signal handler to gracefully shutdown on SIGINT or SIGTERM
+	// Set up a signal handler to shutdown gracefully on SIGINT or SIGTERM
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 	go func() {
@@ -173,7 +172,7 @@ func main() {
 		g.Status(http.StatusOK)
 	})
 	handlers := []gin.HandlerFunc{
-		jsonrpc.Controller(client.NewRpcAdapter(c, d)),
+		ExtERC4337Controller(client.NewRpcAdapter(c, d), rpcClient, eth),
 		jsonrpc.WithOTELTracerAttributes(),
 	}
 	r.POST("/", handlers...)
