@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"math/big"
 	"net/http"
 	"os"
 	"os/signal"
@@ -39,18 +38,6 @@ import (
 	"github.com/blndgs/bundler/conf"
 )
 
-const (
-	EntrypointAddrV060 = "0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789"
-	DataDir            = "/tmp/balloondogs_db"
-	OpLookupLimit      = 2000
-	EthURL             = "https://virtual.mainnet.rpc.tenderly.co/c4100609-e3ff-441b-a803-5a4e95de809f"
-	MaxBatchGasLimit   = 12000000
-	MaxVerificationGas = 3000000
-	CollectorTracer    = "bundlerCollectorTracer"
-	ExecutorTracer     = "bundlerExecutorTracer"
-	MaxTTLSeconds      = 180
-)
-
 func main() {
 	values := conf.GetValues()
 
@@ -72,13 +59,13 @@ func main() {
 	}
 	beneficiary := common.HexToAddress(values.Beneficiary)
 
-	rpcClient, err := rpc.Dial(EthURL)
+	rpcClient, err := rpc.Dial(values.EthClientUrl)
 	if err != nil {
 		log.Fatalf("Failed to connect to Ethereum node: %v", err)
 	}
 	eth := ethclient.NewClient(rpcClient)
 
-	db, err := badger.Open(badger.DefaultOptions(DataDir))
+	db, err := badger.Open(badger.DefaultOptions(values.DataDirectory))
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -105,21 +92,21 @@ func main() {
 		rpcClient,
 		gas.NewDefaultOverhead(),
 		alt,
-		big.NewInt(MaxVerificationGas),
-		big.NewInt(MaxBatchGasLimit),
+		values.MaxVerificationGas,
+		values.MaxBatchGasLimit,
 		false, // isRIP7212Supported
-		CollectorTracer,
+		values.NativeBundlerCollectorTracer,
 		conf.NewReputationConstantsFromEnv(),
 	)
 
-	exp := expire.New(time.Second * MaxTTLSeconds)
+	exp := expire.New(time.Second * values.MaxOpTTL)
 
 	rep := entities.New(db, eth, conf.NewReputationConstantsFromEnv())
 	logger := NewLogger()
 
 	relayer := relay.New(eoa, eth, chain, beneficiary, logger)
 
-	c := client.New(mem, gas.NewDefaultOverhead(), chain, []common.Address{common.HexToAddress(EntrypointAddrV060)}, OpLookupLimit)
+	c := client.New(mem, gas.NewDefaultOverhead(), chain, values.SupportedEntryPoints, values.OpLookupLimit)
 	c.SetGetUserOpReceiptFunc(client.GetUserOpReceiptWithEthClient(eth))
 	c.SetGetGasPricesFunc(client.GetGasPricesWithEthClient(eth))
 	c.SetGetGasEstimateFunc(
@@ -127,8 +114,8 @@ func main() {
 			rpcClient,
 			gas.NewDefaultOverhead(),
 			chain,
-			big.NewInt(MaxBatchGasLimit),
-			ExecutorTracer,
+			values.MaxBatchGasLimit,
+			values.NativeBundlerExecutorTracer,
 		),
 	)
 	c.SetGetUserOpByHashFunc(client.GetUserOpByHashWithEthClient(eth))
@@ -142,7 +129,7 @@ func main() {
 		rep.IncOpsSeen(),
 	)
 
-	b := bundler.New(mem, chain, []common.Address{common.HexToAddress(EntrypointAddrV060)})
+	b := bundler.New(mem, chain, values.SupportedEntryPoints)
 	b.SetGetBaseFeeFunc(gasprice.GetBaseFeeWithEthClient(eth))
 	b.SetGetGasTipFunc(gasprice.GetGasTipWithEthClient(eth))
 	b.SetGetLegacyGasPriceFunc(gasprice.GetLegacyGasPriceWithEthClient(eth))
@@ -153,7 +140,7 @@ func main() {
 	b.UseModules(
 		exp.DropExpired(),
 		batch.SortByNonce(),
-		batch.MaintainGasLimit(big.NewInt(MaxBatchGasLimit)),
+		batch.MaintainGasLimit(values.MaxBatchGasLimit),
 		check.CodeHashes(),
 		relayer.SendUserOperation(),
 		rep.IncOpsIncluded(),
@@ -164,7 +151,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	var d = client.NewDebug(eoa, eth, mem, rep, b, chain, common.HexToAddress(EntrypointAddrV060), beneficiary)
+	var d = client.NewDebug(eoa, eth, mem, rep, b, chain, values.SupportedEntryPoints[0], beneficiary)
 	b.SetMaxBatch(1)
 	relayer.SetWaitTimeout(0)
 

@@ -13,6 +13,17 @@ import (
 	"github.com/stackup-wallet/stackup-bundler/pkg/signer"
 )
 
+const (
+	CollectorTracer    = "bundlerCollectorTracer"
+	ExecutorTracer     = "bundlerExecutorTracer"
+	DataDir            = "/tmp/balloondogs_db"
+	EntrypointAddrV060 = "0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789"
+	OpLookupLimit      = 2000
+	MaxBatchGasLimit   = 12000000
+	MaxVerificationGas = 6000000
+	MaxTTLSeconds      = 180
+)
+
 type Values struct {
 	PrivateKey                   string
 	EthClientUrl                 string
@@ -77,18 +88,20 @@ func envArrayToStringSlice(s string) []string {
 func GetValues() *Values {
 	// Default variables
 	viper.SetDefault("erc4337_bundler_port", 4337)
-	viper.SetDefault("erc4337_bundler_data_directory", "/tmp/stackup_bundler")
-	viper.SetDefault("erc4337_bundler_supported_entry_points", "0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789")
-	viper.SetDefault("erc4337_bundler_max_verification_gas", 6000000)
-	viper.SetDefault("erc4337_bundler_max_batch_gas_limit", 18000000)
-	viper.SetDefault("erc4337_bundler_max_op_ttl_seconds", 180)
-	viper.SetDefault("erc4337_bundler_op_lookup_limit", 2000)
+	viper.SetDefault("erc4337_bundler_data_directory", DataDir)
+	viper.SetDefault("erc4337_bundler_supported_entry_points", EntrypointAddrV060)
+	viper.SetDefault("erc4337_bundler_max_verification_gas", MaxVerificationGas)
+	viper.SetDefault("erc4337_bundler_max_batch_gas_limit", MaxBatchGasLimit)
+	viper.SetDefault("erc4337_bundler_max_op_ttl_seconds", MaxTTLSeconds)
+	viper.SetDefault("erc4337_bundler_op_lookup_limit", OpLookupLimit)
 	viper.SetDefault("erc4337_bundler_blocks_in_the_future", 6)
 	viper.SetDefault("erc4337_bundler_otel_insecure_mode", false)
 	viper.SetDefault("erc4337_bundler_is_op_stack_network", false)
 	viper.SetDefault("erc4337_bundler_is_rip7212_supported", false)
-	viper.SetDefault("erc4337_bundler_debug_mode", false)
+	viper.SetDefault("erc4337_bundler_debug_mode", true)
 	viper.SetDefault("erc4337_bundler_gin_mode", gin.ReleaseMode)
+	viper.SetDefault("erc4337_bundler_native_bundler_collector_tracer", CollectorTracer)
+	viper.SetDefault("erc4337_bundler_native_bundler_executor_tracer", ExecutorTracer)
 
 	// Read in from .env file if available
 	viper.SetConfigName(".env")
