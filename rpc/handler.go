@@ -302,11 +302,11 @@ func extractDataFromUnexportedError(err error) string {
 // Make hashResponse struct public and JSON serializable
 
 type HashesResponse struct {
-	Success string `json:"success"`
+	Success bool `json:"success"`
 	// SDK or original unsolved user operation hash
-	Unsolved string `json:"unsolved"`
-	// If different than Unsolved, it is the hash corresponding to the solved user operation
-	Solved string `json:"solved"`
+	OriginalHash string `json:"original_hash"`
+	// If different, it is the hash corresponding to the solved user operation
+	SolvedHash string `json:"solved_hash"`
 	// Transaction hash
 	Trx string `json:"trx"`
 }
@@ -335,16 +335,11 @@ func waitForUserOpCompletion(ctx context.Context, ethClient *ethclient.Client, t
 					}
 				}
 
-				var success string = "Failed"
-				if receipt.Status == types.ReceiptStatusSuccessful {
-					success = "Success"
-				}
-
 				return &HashesResponse{
-					Success:  success,
-					Unsolved: opHash,
-					Solved:   txHashes.Solved,
-					Trx:      txHashes.Trx.String(),
+					Success:      receipt.Status == types.ReceiptStatusSuccessful,
+					OriginalHash: opHash,
+					SolvedHash:   txHashes.Solved,
+					Trx:          txHashes.Trx.String(),
 				}, err
 			}
 
@@ -378,7 +373,7 @@ func handleEthSendUserOperation(c *gin.Context, rpcAdapter *client.RpcAdapter, e
 		return
 	}
 
-	respString := fmt.Sprintf(`{"success": "%s", "unsolved": "%s", "solved": "%s", "trx": "%s"}`, resp.Success, resp.Unsolved, resp.Solved, resp.Trx)
+	respString := fmt.Sprintf(`{"success": "%s", "unsolved": "%s", "solved": "%s", "trx": "%s"}`, resp.Success, resp.OriginalHash, resp.SolvedHash, resp.Trx)
 
 	sendRawJson(c, json.RawMessage(respString), requestData["id"])
 }
