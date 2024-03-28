@@ -36,6 +36,7 @@ import (
 	"go.opentelemetry.io/otel"
 
 	"github.com/blndgs/bundler/conf"
+	"github.com/blndgs/bundler/solution"
 	"github.com/blndgs/bundler/srv"
 	"github.com/blndgs/bundler/validations"
 )
@@ -107,6 +108,12 @@ func main() {
 
 	relayer := srv.New(values.SupportedEntryPoints[0], eoa, eth, chain, beneficiary, logger)
 
+	println("solver URL:", values.SolverURL)
+	solver := solution.New(values.SolverURL)
+	if err := solution.ReportSolverHealth(values.SolverURL); err != nil {
+		log.Fatal(err)
+	}
+
 	c := client.New(mem, gas.NewDefaultOverhead(), chain, values.SupportedEntryPoints, values.OpLookupLimit)
 	c.SetGetUserOpReceiptFunc(client.GetUserOpReceiptWithEthClient(eth))
 	c.SetGetGasPricesFunc(client.GetGasPricesWithEthClient(eth))
@@ -144,6 +151,7 @@ func main() {
 		exp.DropExpired(),
 		batch.SortByNonce(),
 		batch.MaintainGasLimit(values.MaxBatchGasLimit),
+		solver.SolveIntents(),
 		relayer.SendUserOperation(),
 		rep.IncOpsIncluded(),
 		check.Clean(),

@@ -50,6 +50,7 @@ type Values struct {
 	IsRIP7212Supported           bool
 	DebugMode                    bool
 	GinMode                      string
+	SolverURL                    string
 }
 
 func variableNotSetOrIsNil(env string) bool {
@@ -141,6 +142,7 @@ func GetValues() *Values {
 	_ = viper.BindEnv("erc4337_bundler_is_rip7212_supported")
 	_ = viper.BindEnv("erc4337_bundler_debug_mode")
 	_ = viper.BindEnv("erc4337_bundler_gin_mode")
+	_ = viper.BindEnv("solver_url")
 
 	// Validate required variables
 	if variableNotSetOrIsNil("erc4337_bundler_eth_client_url") {
@@ -178,6 +180,10 @@ func GetValues() *Values {
 		panic("Fatal config error: erc4337_bundler_alt_mempool_ids is set without specifying an IPFS gateway")
 	}
 
+	if variableNotSetOrIsNil("solver_url") && !strings.Contains(viper.GetString("solver_url"), "/solve") {
+		panic("Fatal config error: solver_url not set")
+	}
+
 	// Return Values
 	privateKey := viper.GetString("erc4337_bundler_private_key")
 	ethClientUrl := viper.GetString("erc4337_bundler_eth_client_url")
@@ -203,6 +209,8 @@ func GetValues() *Values {
 	isRIP7212Supported := viper.GetBool("erc4337_bundler_is_rip7212_supported")
 	debugMode := viper.GetBool("erc4337_bundler_debug_mode")
 	ginMode := viper.GetString("erc4337_bundler_gin_mode")
+	solverURL := viper.GetString("solver_url")
+
 	return &Values{
 		PrivateKey:                   privateKey,
 		EthClientUrl:                 ethClientUrl,
@@ -229,6 +237,7 @@ func GetValues() *Values {
 		IsRIP7212Supported:           isRIP7212Supported,
 		DebugMode:                    debugMode,
 		GinMode:                      ginMode,
+		SolverURL:                    solverURL,
 	}
 }
 
