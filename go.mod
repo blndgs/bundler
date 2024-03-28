@@ -23,6 +23,7 @@ require (
 )
 
 require (
+	github.com/blndgs/model v0.18.1 // indirect
 	github.com/btcsuite/btcd/btcec/v2 v2.3.2 // indirect
 	github.com/bytedance/sonic v1.11.3 // indirect
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
