@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"math/big"
 	"net/http"
 	"reflect"
@@ -40,7 +39,7 @@ func ExtERC4337Controller(hashesMap *xsync.MapOf[string, srv.OpHashes], rpcAdapt
 			return
 		}
 
-		body, err := io.ReadAll(c.Request.Body)
+		body, err := readBody(c)
 		if err != nil {
 			jsonrpcError(c, -32700, "Parse error", "Error while reading request body", nil)
 			return
