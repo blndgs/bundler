@@ -1,58 +1,110 @@
 package main
 
 import (
+	"context"
 	"fmt"
+	"io"
 	"math/big"
 	"net/http"
 	"reflect"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/gin-gonic/gin"
 	"github.com/goccy/go-json"
+	"github.com/mitchellh/mapstructure"
+	"github.com/stackup-wallet/stackup-bundler/pkg/client"
 	"github.com/stackup-wallet/stackup-bundler/pkg/jsonrpc"
 )
 
 // ExtERC4337Controller extends the default JSON-RPC controller to handle non-ERC4337 Ethereum RPC methods.
-func ExtERC4337Controller(api interface{}, rpcClient *rpc.Client, ethRPCClient *ethclient.Client) gin.HandlerFunc {
+func ExtERC4337Controller(rpcAdapter *client.RpcAdapter, rpcClient *rpc.Client, ethRPCClient *ethclient.Client) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		originalHandler := jsonrpc.Controller(api)
-		originalHandler(c)
+		if c.Request.Method != "POST" {
+			jsonrpcError(c, -32700, "Parse error", "POST method excepted", nil)
+			return
+		}
 
-		// Check if the request has already been handled by the original Controller
+		if c.Request.Body == nil {
+			jsonrpcError(c, -32700, "Parse error", "No POST data", nil)
+			return
+		}
+
+		body, err := io.ReadAll(c.Request.Body)
+		if err != nil {
+			jsonrpcError(c, -32700, "Parse error", "Error while reading request body", nil)
+			return
+		}
+
+		data := make(map[string]any)
+		err = json.Unmarshal(body, &data)
+		if err != nil {
+			jsonrpcError(c, -32700, "Parse error", "Error parsing json request", nil)
+			return
+		}
+
+		id, ok := parseRequestId(data)
+		if !ok {
+			jsonrpcError(c, -32600, "Invalid Request", "No or invalid 'id' in request", nil)
+			return
+		}
+
+		if data["jsonrpc"] != "2.0" {
+			jsonrpcError(c, -32600, "Invalid Request", "Version of jsonrpc is not 2.0", &id)
+			return
+		}
+
+		method, ok := data["method"].(string)
+		if !ok {
+			jsonrpcError(c, -32600, "Invalid Request", "No or invalid 'method' in request", &id)
+			return
+		}
+
+		println()
+		println("-------------------------------")
+		println("Method:", method)
+		println("-------------------------------")
+		println()
+
+		if isStdEthereumRPCMethod(method) || strings.ToLower(method) == "eth_senduseroperation" {
+			routeStdEthereumRPCRequest(c, rpcAdapter, method, rpcClient, ethRPCClient, data)
+
+			return
+		}
+
+		// Check if the request has already been handled
 		if c.Writer.Written() {
 			return
 		}
 
-		// Get the JSON-RPC request data from the Gin context
-		requestData, exists := c.Get("json-rpc-request")
-		if !exists {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid JSON-RPC request"})
-			return
-		}
-
-		// Extract the RPC method from the request data
-		method, ok := requestData.(map[string]any)["method"].(string)
-		if !ok {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Missing or invalid RPC method"})
-			return
-		}
-
-		if isStdEthereumRPCMethod(method) {
-			fmt.Println("Method:", method)
-
-			if requestDataMap, ok := requestData.(map[string]any); ok {
-				// Proxy the request to the Ethereum node
-				routeStdEthereumRPCRequest(c, method, rpcClient, ethRPCClient, requestDataMap)
-			}
-
-			return
-		}
+		originalHandler := jsonrpc.Controller(rpcAdapter)
+		originalHandler(c)
+		// // Handle eth_sendUserOperation
+		// if strings.ToLower(method) == "eth_senduseroperation" {
+		// 	if requestDataMap, ok := requestData.(map[string]any); ok {
+		// 		handleEthSendUserOperation(c, rpcAdapter, ethRPCClient, requestDataMap)
+		// 	}
+		// 	return
+		// }
 	}
+}
+
+// parseRequestId checks if the JSON-RPC request contains an id field that is either NULL, Number, or String.
+func parseRequestId(data map[string]any) (any, bool) {
+	id, ok := data["id"]
+	_, isFloat64 := id.(float64)
+	_, isStr := id.(string)
+
+	if ok && (id == nil || isFloat64 || isStr) {
+		return id, true
+	}
+	return nil, false
 }
 
 func isStdEthereumRPCMethod(method string) bool {
@@ -76,12 +128,14 @@ func isStdEthereumRPCMethod(method string) bool {
 	return !isBundlerMethod
 }
 
-func routeStdEthereumRPCRequest(c *gin.Context, method string, rpcClient *rpc.Client, ethClient *ethclient.Client, requestData map[string]any) {
+func routeStdEthereumRPCRequest(c *gin.Context, rpcAdapter *client.RpcAdapter, method string, rpcClient *rpc.Client, ethClient *ethclient.Client, requestData map[string]any) {
 	const (
 		ethCall = "eth_call"
 	)
 
 	switch strings.ToLower(method) {
+	case "eth_senduseroperation":
+		handleEthSendUserOperation(c, rpcAdapter, ethClient, requestData)
 	case ethCall:
 		handleEthCallRequest(c, ethClient, requestData)
 	default:
@@ -104,7 +158,6 @@ func handleEthRequest(c *gin.Context, method string, rpcClient *rpc.Client, requ
 	}
 
 	sendRawJson(c, raw, requestData["id"])
-
 }
 
 func jsonrpcError(c *gin.Context, code int, message string, data any, id any) {
@@ -248,4 +301,49 @@ func extractDataFromUnexportedError(err error) string {
 	}
 
 	return ""
+}
+
+func waitForUserOpCompletion(ctx context.Context, ethClient *ethclient.Client, userOpHash common.Hash) (string, error) {
+	for {
+		receipt, err := ethClient.TransactionReceipt(ctx, userOpHash)
+		if err != nil {
+			if err == ethereum.NotFound {
+				// Transaction not mined yet, wait and retry
+				time.Sleep(1 * time.Second)
+				continue
+			}
+			return "", err
+		}
+
+		// Transaction mined, return the status
+		if receipt.Status == types.ReceiptStatusSuccessful {
+			return "success", nil
+		} else {
+			return "failed", nil
+		}
+	}
+}
+
+func handleEthSendUserOperation(c *gin.Context, rpcAdapter *client.RpcAdapter, ethClient *ethclient.Client, requestData map[string]any) {
+	var op map[string]any
+	if err := mapstructure.Decode(requestData["params"].([]interface{})[0], &op); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid user operation"})
+		return
+	}
+
+	ep := requestData["params"].([]interface{})[1].(string)
+
+	userOpHash, err := rpcAdapter.Eth_sendUserOperation(op, ep)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	status, err := waitForUserOpCompletion(c.Request.Context(), ethClient, common.HexToHash(userOpHash))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"result": status})
 }

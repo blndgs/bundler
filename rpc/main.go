@@ -163,6 +163,7 @@ func main() {
 	if err := r.SetTrustedProxies(nil); err != nil {
 		log.Fatal(err)
 	}
+	// TODO investigate usefulness
 	// if o11y.IsEnabled(conf.OTELServiceName) {
 	// 	r.Use(otelgin.Middleware(conf.OTELServiceName))
 	// }
