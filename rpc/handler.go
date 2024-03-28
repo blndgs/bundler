@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"math/big"
@@ -19,12 +20,15 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/goccy/go-json"
 	"github.com/mitchellh/mapstructure"
+	"github.com/puzpuzpuz/xsync/v3"
 	"github.com/stackup-wallet/stackup-bundler/pkg/client"
 	"github.com/stackup-wallet/stackup-bundler/pkg/jsonrpc"
+
+	"github.com/blndgs/bundler/srv"
 )
 
 // ExtERC4337Controller extends the default JSON-RPC controller to handle non-ERC4337 Ethereum RPC methods.
-func ExtERC4337Controller(rpcAdapter *client.RpcAdapter, rpcClient *rpc.Client, ethRPCClient *ethclient.Client) gin.HandlerFunc {
+func ExtERC4337Controller(hashesMap *xsync.MapOf[string, srv.OpHashes], rpcAdapter *client.RpcAdapter, rpcClient *rpc.Client, ethRPCClient *ethclient.Client) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if c.Request.Method != "POST" {
 			jsonrpcError(c, -32700, "Parse error", "POST method excepted", nil)
@@ -73,7 +77,7 @@ func ExtERC4337Controller(rpcAdapter *client.RpcAdapter, rpcClient *rpc.Client, 
 		println()
 
 		if isStdEthereumRPCMethod(method) || strings.ToLower(method) == "eth_senduseroperation" {
-			routeStdEthereumRPCRequest(c, rpcAdapter, method, rpcClient, ethRPCClient, data)
+			routeStdEthereumRPCRequest(c, rpcAdapter, method, rpcClient, ethRPCClient, hashesMap, data)
 
 			return
 		}
@@ -85,13 +89,6 @@ func ExtERC4337Controller(rpcAdapter *client.RpcAdapter, rpcClient *rpc.Client, 
 
 		originalHandler := jsonrpc.Controller(rpcAdapter)
 		originalHandler(c)
-		// // Handle eth_sendUserOperation
-		// if strings.ToLower(method) == "eth_senduseroperation" {
-		// 	if requestDataMap, ok := requestData.(map[string]any); ok {
-		// 		handleEthSendUserOperation(c, rpcAdapter, ethRPCClient, requestDataMap)
-		// 	}
-		// 	return
-		// }
 	}
 }
 
@@ -128,14 +125,14 @@ func isStdEthereumRPCMethod(method string) bool {
 	return !isBundlerMethod
 }
 
-func routeStdEthereumRPCRequest(c *gin.Context, rpcAdapter *client.RpcAdapter, method string, rpcClient *rpc.Client, ethClient *ethclient.Client, requestData map[string]any) {
+func routeStdEthereumRPCRequest(c *gin.Context, rpcAdapter *client.RpcAdapter, method string, rpcClient *rpc.Client, ethClient *ethclient.Client, hashesMap *xsync.MapOf[string, srv.OpHashes], requestData map[string]any) {
 	const (
 		ethCall = "eth_call"
 	)
 
 	switch strings.ToLower(method) {
 	case "eth_senduseroperation":
-		handleEthSendUserOperation(c, rpcAdapter, ethClient, requestData)
+		handleEthSendUserOperation(c, rpcAdapter, ethClient, hashesMap, requestData)
 	case ethCall:
 		handleEthCallRequest(c, ethClient, requestData)
 	default:
@@ -303,28 +300,65 @@ func extractDataFromUnexportedError(err error) string {
 	return ""
 }
 
-func waitForUserOpCompletion(ctx context.Context, ethClient *ethclient.Client, userOpHash common.Hash) (string, error) {
-	for {
-		receipt, err := ethClient.TransactionReceipt(ctx, userOpHash)
-		if err != nil {
-			if err == ethereum.NotFound {
-				// Transaction not mined yet, wait and retry
-				time.Sleep(1 * time.Second)
-				continue
-			}
-			return "", err
-		}
+// Make hashResponse struct public and JSON serializable
 
-		// Transaction mined, return the status
-		if receipt.Status == types.ReceiptStatusSuccessful {
-			return "success", nil
-		} else {
-			return "failed", nil
+type HashesResponse struct {
+	Success string `json:"success"`
+	// SDK or original unsolved user operation hash
+	Unsolved string `json:"unsolved"`
+	// If different than Unsolved, it is the hash corresponding to the solved user operation
+	Solved string `json:"solved"`
+	// Transaction hash
+	Trx string `json:"trx"`
+}
+
+func waitForUserOpCompletion(ctx context.Context, ethClient *ethclient.Client, txHashes *xsync.MapOf[string, srv.OpHashes], userOpHash common.Hash) (*HashesResponse, error) {
+	const (
+		waitTimeout = 300 * time.Second
+		ticking     = 500 * time.Millisecond
+	)
+
+	ticker := time.NewTicker(ticking)
+	defer ticker.Stop()
+
+	timeout := time.After(waitTimeout)
+
+	for {
+		select {
+		case <-ticker.C:
+			opHash := userOpHash.String()
+			if txHashes, ok := txHashes.Load(opHash); ok { // Retrieve the transaction hash from sync.Map
+				receipt, err := ethClient.TransactionReceipt(ctx, txHashes.Trx)
+				if err != nil {
+					if errors.Is(err, ethereum.NotFound) {
+						// Transaction not mined yet, continue waiting
+						continue
+					}
+				}
+
+				var success string = "Failed"
+				if receipt.Status == types.ReceiptStatusSuccessful {
+					success = "Success"
+				}
+
+				return &HashesResponse{
+					Success:  success,
+					Unsolved: opHash,
+					Solved:   txHashes.Solved,
+					Trx:      txHashes.Trx.String(),
+				}, err
+			}
+
+		case <-timeout:
+			return nil, fmt.Errorf("timeout waiting for user operation completion")
+
+		case <-ctx.Done():
+			return nil, ctx.Err()
 		}
 	}
 }
 
-func handleEthSendUserOperation(c *gin.Context, rpcAdapter *client.RpcAdapter, ethClient *ethclient.Client, requestData map[string]any) {
+func handleEthSendUserOperation(c *gin.Context, rpcAdapter *client.RpcAdapter, ethClient *ethclient.Client, hashesMap *xsync.MapOf[string, srv.OpHashes], requestData map[string]any) {
 	var op map[string]any
 	if err := mapstructure.Decode(requestData["params"].([]interface{})[0], &op); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid user operation"})
@@ -339,11 +373,13 @@ func handleEthSendUserOperation(c *gin.Context, rpcAdapter *client.RpcAdapter, e
 		return
 	}
 
-	status, err := waitForUserOpCompletion(c.Request.Context(), ethClient, common.HexToHash(userOpHash))
+	resp, err := waitForUserOpCompletion(c.Request.Context(), ethClient, hashesMap, common.HexToHash(userOpHash))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"result": status})
+	respString := fmt.Sprintf(`{"success": "%s", "unsolved": "%s", "solved": "%s", "trx": "%s"}`, resp.Success, resp.Unsolved, resp.Solved, resp.Trx)
+
+	sendRawJson(c, json.RawMessage(respString), requestData["id"])
 }

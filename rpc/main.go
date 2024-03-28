@@ -32,11 +32,11 @@ import (
 	"github.com/stackup-wallet/stackup-bundler/pkg/modules/entities"
 	"github.com/stackup-wallet/stackup-bundler/pkg/modules/expire"
 	"github.com/stackup-wallet/stackup-bundler/pkg/modules/gasprice"
-	"github.com/stackup-wallet/stackup-bundler/pkg/modules/relay"
 	"github.com/stackup-wallet/stackup-bundler/pkg/signer"
 	"go.opentelemetry.io/otel"
 
 	"github.com/blndgs/bundler/conf"
+	"github.com/blndgs/bundler/srv"
 	"github.com/blndgs/bundler/validations"
 )
 
@@ -105,7 +105,7 @@ func main() {
 	rep := entities.New(db, eth, conf.NewReputationConstantsFromEnv())
 	logger := NewLogger()
 
-	relayer := relay.New(eoa, eth, chain, beneficiary, logger)
+	relayer := srv.New(values.SupportedEntryPoints[0], eoa, eth, chain, beneficiary, logger)
 
 	c := client.New(mem, gas.NewDefaultOverhead(), chain, values.SupportedEntryPoints, values.OpLookupLimit)
 	c.SetGetUserOpReceiptFunc(client.GetUserOpReceiptWithEthClient(eth))
@@ -176,7 +176,7 @@ func main() {
 		g.Status(http.StatusOK)
 	})
 	handlers := []gin.HandlerFunc{
-		ExtERC4337Controller(client.NewRpcAdapter(c, d), rpcClient, eth),
+		ExtERC4337Controller(relayer.GetOpHashes(), client.NewRpcAdapter(c, d), rpcClient, eth),
 		jsonrpc.WithOTELTracerAttributes(),
 	}
 	r.POST("/", handlers...)
