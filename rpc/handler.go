@@ -373,7 +373,11 @@ func handleEthSendUserOperation(c *gin.Context, rpcAdapter *client.RpcAdapter, e
 		return
 	}
 
-	respString := fmt.Sprintf(`{"success": "%s", "unsolved": "%s", "solved": "%s", "trx": "%s"}`, resp.Success, resp.OriginalHash, resp.SolvedHash, resp.Trx)
+	jsonResp, err := json.Marshal(resp)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 
-	sendRawJson(c, json.RawMessage(respString), requestData["id"])
+	sendRawJson(c, json.RawMessage(jsonResp), requestData["id"])
 }
