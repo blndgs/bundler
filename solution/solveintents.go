@@ -48,9 +48,6 @@ type IntentsHandler struct {
 	SolverClient *http.Client
 }
 
-// Verify structural congruence
-var _ = model.UserOperation(userop.UserOperation{})
-
 func New(solverURL string) *IntentsHandler {
 	const httpClientTimeout = 100 * time.Second
 
@@ -95,6 +92,9 @@ func (ei *IntentsHandler) SolveIntents() modules.BatchHandlerFunc {
 	return func(ctx *modules.BatchHandlerCtx) error {
 		batchIntentIndices := make(batchIntentIndices)
 
+		// Verify structural congruence for guaranteeing the following type assertion
+		var _ = model.UserOperation(userop.UserOperation{})
+		
 		// cast the received userOp batch to a slice of model.UserOperation
 		// to be sent to the Solver
 		modelUserOps := *(*[]*model.UserOperation)(unsafe.Pointer(&ctx.Batch))
