@@ -185,7 +185,7 @@ func main() {
 		g.Status(http.StatusOK)
 	})
 	handlers := []gin.HandlerFunc{
-		ExtERC4337Controller(relayer.GetOpHashes(), client.NewRpcAdapter(c, d), rpcClient, eth),
+		ExtERC4337Controller(relayer.GetOpHashes(), client.NewRpcAdapter(c, d), rpcClient, eth, values),
 		jsonrpc.WithOTELTracerAttributes(),
 	}
 	r.POST("/", handlers...)

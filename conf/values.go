@@ -107,6 +107,7 @@ func GetValues() *Values {
 	viper.SetDefault("erc4337_bundler_gin_mode", gin.ReleaseMode)
 	viper.SetDefault("erc4337_bundler_native_bundler_collector_tracer", CollectorTracer)
 	viper.SetDefault("erc4337_bundler_native_bundler_executor_tracer", ExecutorTracer)
+	viper.SetDefault("erc4337_bundler_status_timeout", time.Second*300)
 
 	// Read in from .env file if available
 	viper.SetConfigName(".env")
@@ -148,6 +149,7 @@ func GetValues() *Values {
 	_ = viper.BindEnv("erc4337_bundler_debug_mode")
 	_ = viper.BindEnv("erc4337_bundler_gin_mode")
 	_ = viper.BindEnv("solver_url")
+	_ = viper.BindEnv("erc4337_bundler_status_timeout")
 
 	// Validate required variables
 	if variableNotSetOrIsNil("erc4337_bundler_eth_client_url") {
@@ -216,6 +218,7 @@ func GetValues() *Values {
 	debugMode := viper.GetBool("erc4337_bundler_debug_mode")
 	ginMode := viper.GetString("erc4337_bundler_gin_mode")
 	solverURL := viper.GetString("solver_url")
+	useropStatusWaitTime := viper.GetDuration("erc4337_bundler_status_timeout")
 
 	return &Values{
 		PrivateKey:                   privateKey,
@@ -245,6 +248,7 @@ func GetValues() *Values {
 		DebugMode:                    debugMode,
 		GinMode:                      ginMode,
 		SolverURL:                    solverURL,
+		StatusTimeout:                useropStatusWaitTime,
 	}
 }
 
