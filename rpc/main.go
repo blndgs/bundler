@@ -33,6 +33,7 @@ import (
 	"github.com/stackup-wallet/stackup-bundler/pkg/modules/expire"
 	"github.com/stackup-wallet/stackup-bundler/pkg/modules/gasprice"
 	"github.com/stackup-wallet/stackup-bundler/pkg/signer"
+	"go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
 	"go.opentelemetry.io/otel"
 
 	"github.com/blndgs/bundler/conf"
@@ -171,10 +172,10 @@ func main() {
 	if err := r.SetTrustedProxies(nil); err != nil {
 		log.Fatal(err)
 	}
-	// TODO investigate usefulness
-	// if o11y.IsEnabled(conf.OTELServiceName) {
-	// 	r.Use(otelgin.Middleware(conf.OTELServiceName))
-	// }
+
+	if values.OTELIsEnabled {
+		r.Use(otelgin.Middleware(values.OTELServiceName))
+	}
 	r.Use(
 		cors.Default(),
 		WithLogr(logger),
