@@ -17,10 +17,6 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
-	"github.com/go-logr/logr"
-	"github.com/go-logr/zerologr"
-	"github.com/pkg/errors"
-	"github.com/rs/zerolog"
 	"github.com/stackup-wallet/stackup-bundler/pkg/altmempools"
 	"github.com/stackup-wallet/stackup-bundler/pkg/bundler"
 	"github.com/stackup-wallet/stackup-bundler/pkg/client"
@@ -37,6 +33,7 @@ import (
 	"go.opentelemetry.io/otel"
 
 	"github.com/blndgs/bundler/conf"
+	"github.com/blndgs/bundler/logger"
 	"github.com/blndgs/bundler/solution"
 	"github.com/blndgs/bundler/srv"
 	"github.com/blndgs/bundler/validations"
@@ -105,9 +102,9 @@ func main() {
 	exp := expire.New(time.Second * values.MaxOpTTL)
 
 	rep := entities.New(db, eth, conf.NewReputationConstantsFromEnv())
-	logger := NewLogger()
+	stdLogger := logger.NewZeroLogr()
 
-	relayer := srv.New(values.SupportedEntryPoints[0], eoa, eth, chain, beneficiary, logger)
+	relayer := srv.New(values.SupportedEntryPoints[0], eoa, eth, chain, beneficiary, stdLogger)
 
 	println("solver URL:", values.SolverURL)
 	solver := solution.New(values.SolverURL)
@@ -128,7 +125,7 @@ func main() {
 		),
 	)
 	c.SetGetUserOpByHashFunc(client.GetUserOpByHashWithEthClient(eth))
-	c.UseLogger(logger)
+	c.UseLogger(stdLogger)
 
 	c.UseModules(
 		rep.CheckStatus(),
@@ -142,7 +139,7 @@ func main() {
 	b.SetGetBaseFeeFunc(gasprice.GetBaseFeeWithEthClient(eth))
 	b.SetGetGasTipFunc(gasprice.GetGasTipWithEthClient(eth))
 	b.SetGetLegacyGasPriceFunc(gasprice.GetLegacyGasPriceWithEthClient(eth))
-	b.UseLogger(logger)
+	b.UseLogger(stdLogger)
 	if err := b.UserMeter(otel.GetMeterProvider().Meter("bundler")); err != nil {
 		log.Fatal(err)
 	}
@@ -178,7 +175,7 @@ func main() {
 	}
 	r.Use(
 		cors.Default(),
-		WithLogr(logger),
+		logger.WithLogr(stdLogger),
 		gin.Recovery(),
 	)
 	r.GET("/ping", func(g *gin.Context) {
@@ -203,12 +200,6 @@ func main() {
 	log.Println("Shutting down...")
 }
 
-func NewLogger() zerologr.Logger {
-	zl := zerolog.New(os.Stderr).With().Caller().Timestamp().Logger()
-	logger := zerologr.New(&zl)
-	return logger
-}
-
 func runDBGarbageCollection(db *badger.DB) {
 	go func(db *badger.DB) {
 		ticker := time.NewTicker(5 * time.Minute)
@@ -222,57 +213,4 @@ func runDBGarbageCollection(db *badger.DB) {
 			}
 		}
 	}(db)
-}
-
-// WithLogr uses a logger with the go-logr/logr interface to log a gin HTTP request.
-func WithLogr(logger logr.Logger) gin.HandlerFunc {
-	return func(c *gin.Context) {
-
-		start := time.Now() // Start timer
-		path := c.Request.URL.Path
-		raw := c.Request.URL.RawQuery
-
-		// Process request
-		c.Next()
-
-		// Fill the params
-		param := gin.LogFormatterParams{}
-
-		param.TimeStamp = time.Now() // Stop timer
-		param.Latency = param.TimeStamp.Sub(start)
-		if param.Latency > time.Minute {
-			param.Latency = param.Latency.Truncate(time.Second)
-		}
-
-		param.ClientIP = GetClientIPFromXFF(c)
-		param.Method = c.Request.Method
-		param.StatusCode = c.Writer.Status()
-		param.ErrorMessage = c.Errors.ByType(gin.ErrorTypePrivate).String()
-		param.BodySize = c.Writer.Size()
-		if raw != "" {
-			path = path + "?" + raw
-		}
-		param.Path = path
-
-		logEvent := logger.WithName("http").
-			WithValues("client_id", param.ClientIP).
-			WithValues("method", param.Method).
-			WithValues("status_code", param.StatusCode).
-			WithValues("body_size", param.BodySize).
-			WithValues("path", param.Path).
-			WithValues("latency", param.Latency.String())
-
-		req, exists := c.Get("json-rpc-request")
-		if exists {
-			json := req.(map[string]any)
-			logEvent = logEvent.WithValues("rpc_method", json["method"])
-		}
-
-		// Log using the params
-		if c.Writer.Status() >= 500 {
-			logEvent.Error(errors.New(param.ErrorMessage), param.ErrorMessage)
-		} else {
-			logEvent.Info(param.ErrorMessage)
-		}
-	}
 }
