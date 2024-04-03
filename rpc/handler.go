@@ -358,8 +358,8 @@ func waitForUserOpCompletion(ctx context.Context, ethClient *ethclient.Client, t
 	}
 }
 
-func handleEthSendUserOperation(c *gin.Context, rpcAdapter *client.RpcAdapter, ethClient *ethclient.Client, hashesMap *xsync.MapOf[string, srv.OpHashes],
-	requestData map[string]any, values *conf.Values) {
+func handleEthSendUserOperation(c *gin.Context, rpcAdapter *client.RpcAdapter, ethClient *ethclient.Client,
+	hashesMap *xsync.MapOf[string, srv.OpHashes], requestData map[string]any, values *conf.Values) {
 
 	var op map[string]any
 	if err := mapstructure.Decode(requestData["params"].([]interface{})[0], &op); err != nil {

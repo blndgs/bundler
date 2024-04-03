@@ -94,7 +94,7 @@ func (ei *IntentsHandler) SolveIntents() modules.BatchHandlerFunc {
 
 		// Verify structural congruence for guaranteeing the following type assertion
 		var _ = model.UserOperation(userop.UserOperation{})
-		
+
 		// cast the received userOp batch to a slice of model.UserOperation
 		// to be sent to the Solver
 		modelUserOps := *(*[]*model.UserOperation)(unsafe.Pointer(&ctx.Batch))
@@ -177,6 +177,10 @@ func ReportSolverHealth(solverURL string) error {
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("Solver health check returned non-OK status: %s", resp.Status)
+	}
+
 	fmt.Println("Solver health response: ", resp.Status)
 	_, err = io.Copy(os.Stdout, resp.Body)
 	if err != nil {
@@ -208,9 +212,9 @@ func (ei *IntentsHandler) sendToSolver(body model.BodyOfUserOps) error {
 	}
 	defer resp.Body.Close()
 
-	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
-		return err
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("Solver returned non-OK status: %s", resp.Status)
 	}
 
-	return nil
+	return json.NewDecoder(resp.Body).Decode(&body)
 }
