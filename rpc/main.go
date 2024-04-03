@@ -175,7 +175,7 @@ func main() {
 	}
 	r.Use(
 		cors.Default(),
-		logger.WithLogr(stdLogger),
+		WithLogr(stdLogger),
 		gin.Recovery(),
 	)
 	r.GET("/ping", func(g *gin.Context) {
