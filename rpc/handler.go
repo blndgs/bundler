@@ -317,6 +317,7 @@ type HashesResponse struct {
 
 func waitForUserOpCompletion(ctx context.Context, ethClient *ethclient.Client, txHashes *xsync.MapOf[string, srv.OpHashes],
 	userOpHash common.Hash, waitTimeout time.Duration) (*HashesResponse, error) {
+
 	const (
 		ticking = 500 * time.Millisecond
 	)
@@ -324,7 +325,8 @@ func waitForUserOpCompletion(ctx context.Context, ethClient *ethclient.Client, t
 	ticker := time.NewTicker(ticking)
 	defer ticker.Stop()
 
-	timeout := time.After(waitTimeout)
+	timeoutCtx, cancelTimeoutCtx := context.WithTimeout(context.Background(), waitTimeout)
+	defer cancelTimeoutCtx()
 
 	for {
 		select {
@@ -347,7 +349,7 @@ func waitForUserOpCompletion(ctx context.Context, ethClient *ethclient.Client, t
 				}, err
 			}
 
-		case <-timeout:
+		case <-timeoutCtx.Done():
 			return nil, fmt.Errorf("timeout waiting for user operation completion")
 
 		case <-ctx.Done():
