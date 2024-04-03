@@ -9,7 +9,6 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
-	"unsafe"
 
 	"github.com/dgraph-io/badger/v3"
 	"github.com/ethereum/go-ethereum/common"
@@ -22,7 +21,6 @@ import (
 	"github.com/stackup-wallet/stackup-bundler/pkg/gas"
 	"github.com/stackup-wallet/stackup-bundler/pkg/mempool"
 	"github.com/stackup-wallet/stackup-bundler/pkg/modules/batch"
-	"github.com/stackup-wallet/stackup-bundler/pkg/modules/checks"
 	"github.com/stackup-wallet/stackup-bundler/pkg/modules/entities"
 	"github.com/stackup-wallet/stackup-bundler/pkg/modules/expire"
 	"github.com/stackup-wallet/stackup-bundler/pkg/modules/gasprice"
@@ -110,32 +108,12 @@ func main() {
 		log.Fatal(err)
 	}
 
-	c := client.New(mem, gas.NewDefaultOverhead(), chain, values.SupportedEntryPoints, values.OpLookupLimit)
-	c.SetGetUserOpReceiptFunc(client.GetUserOpReceiptWithEthClient(eth))
-	c.SetGetGasPricesFunc(client.GetGasPricesWithEthClient(eth))
-	c.SetGetGasEstimateFunc(
-		client.GetGasEstimateWithEthClient(
-			rpcClient,
-			gas.NewDefaultOverhead(),
-			chain,
-			values.MaxBatchGasLimit,
-			values.NativeBundlerExecutorTracer,
-		),
-	)
-	c.SetGetUserOpByHashFunc(client.GetUserOpByHashWithEthClient(eth))
-	c.UseLogger(stdLogger)
-
-	c.UseModules(
-		rep.CheckStatus(),
-		rep.ValidateOpLimit(),
-		validator.OpValues(),
-		// Omit simulation
-		rep.IncOpsSeen(),
-	)
+	erc4337Client := createERC4337Client(mem, values, chain, eth, rpcClient, stdLogger, rep, validator)
 
 	bundlerClient := createBundlerClient(mem, chain, values, eth, stdLogger)
 
-	var check = (*checks.Standalone)(unsafe.Pointer(validator))
+	check := validator.ToStandaloneCheck()
+
 	bundlerClient.UseModules(
 		exp.DropExpired(),
 		batch.SortByNonce(),
@@ -149,12 +127,12 @@ func main() {
 		log.Fatal(err)
 	}
 
-	var d = client.NewDebug(eoa, eth, mem, rep, bundlerClient, chain, values.SupportedEntryPoints[0], beneficiary)
+	var debugClient = client.NewDebug(eoa, eth, mem, rep, bundlerClient, chain, values.SupportedEntryPoints[0], beneficiary)
 	bundlerClient.SetMaxBatch(1)
 	relayer.SetWaitTimeout(0)
 
-	handler, shutdown := rpcHandler.NewServer(values, stdLogger, relayer,
-		client.NewRpcAdapter(c, d), eth, rpcClient, chain)
+	handler, shutdown := rpcHandler.NewRPCServer(values, stdLogger, relayer,
+		client.NewRpcAdapter(erc4337Client, debugClient), eth, rpcClient, chain)
 	defer shutdown()
 
 	go func() {
@@ -167,6 +145,37 @@ func main() {
 	// Wait for the context to be canceled
 	<-ctx.Done()
 	log.Println("Shutting down...")
+}
+
+func createERC4337Client(mem *mempool.Mempool, values *conf.Values, chainID *big.Int,
+	ethClient *ethclient.Client, rpcClient *rpc.Client, logger logr.Logger,
+	rep *entities.Reputation, validator *validations.Validator) *client.Client {
+
+	c := client.New(mem, gas.NewDefaultOverhead(), chainID, values.SupportedEntryPoints, values.OpLookupLimit)
+	c.SetGetUserOpReceiptFunc(client.GetUserOpReceiptWithEthClient(ethClient))
+	c.SetGetGasPricesFunc(client.GetGasPricesWithEthClient(ethClient))
+	c.SetGetGasEstimateFunc(
+		client.GetGasEstimateWithEthClient(
+			rpcClient,
+			gas.NewDefaultOverhead(),
+			chainID,
+			values.MaxBatchGasLimit,
+			values.NativeBundlerExecutorTracer,
+		),
+	)
+
+	c.SetGetUserOpByHashFunc(client.GetUserOpByHashWithEthClient(ethClient))
+	c.UseLogger(logger)
+
+	c.UseModules(
+		rep.CheckStatus(),
+		rep.ValidateOpLimit(),
+		validator.OpValues(),
+		// Omit simulation
+		rep.IncOpsSeen(),
+	)
+
+	return c
 }
 
 func createBundlerClient(mem *mempool.Mempool, chainID *big.Int,

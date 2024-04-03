@@ -18,7 +18,7 @@ import (
 	"go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
 )
 
-func NewServer(values *conf.Values, logger logr.Logger, relayer *srv.Relayer,
+func NewRPCServer(values *conf.Values, logger logr.Logger, relayer *srv.Relayer,
 	rpcAdapter *client.RpcAdapter, ethClient *ethclient.Client,
 	rpcClient *rpc.Client, chainID *big.Int) (*gin.Engine, func()) {
 
