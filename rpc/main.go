@@ -190,9 +190,12 @@ func main() {
 	r.POST("/", handlers...)
 	r.POST("/rpc", handlers...)
 
-	if err := r.Run(fmt.Sprintf(":%d", values.Port)); err != nil {
-		log.Fatal(err)
-	}
+	go func() {
+		if err := r.Run(fmt.Sprintf(":%d", values.Port)); err != nil {
+			cancel()
+			log.Fatal(err)
+		}
+	}()
 
 	// Wait for the context to be canceled
 	<-ctx.Done()
