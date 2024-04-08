@@ -14,14 +14,15 @@ import (
 )
 
 const (
-	CollectorTracer    = "bundlerCollectorTracer"
-	ExecutorTracer     = "bundlerExecutorTracer"
-	DataDir            = "/tmp/balloondogs_db"
-	EntrypointAddrV060 = "0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789"
-	OpLookupLimit      = 2000
-	MaxBatchGasLimit   = 12000000
-	MaxVerificationGas = 6000000
-	MaxTTLSeconds      = 180
+	CollectorTracer           = "bundlerCollectorTracer"
+	ExecutorTracer            = "bundlerExecutorTracer"
+	DefaultBundlerServiceName = "bundler"
+	DataDir                   = "/tmp/balloondogs_db"
+	EntrypointAddrV060        = "0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789"
+	OpLookupLimit             = 2000
+	MaxBatchGasLimit          = 12000000
+	MaxVerificationGas        = 6000000
+	MaxTTLSeconds             = 180
 )
 
 type Values struct {
@@ -40,6 +41,8 @@ type Values struct {
 	ReputationConstants          *entities.ReputationConstants
 	EthBuilderUrls               []string
 	BlocksInTheFuture            int
+	StatusTimeout                time.Duration
+	OTELIsEnabled                bool
 	OTELServiceName              string
 	OTELCollectorHeaders         map[string]string
 	OTELCollectorUrl             string
@@ -97,12 +100,14 @@ func GetValues() *Values {
 	viper.SetDefault("erc4337_bundler_op_lookup_limit", OpLookupLimit)
 	viper.SetDefault("erc4337_bundler_blocks_in_the_future", 6)
 	viper.SetDefault("erc4337_bundler_otel_insecure_mode", false)
+	viper.SetDefault("erc4337_bundler_otel_service_name", DefaultBundlerServiceName)
 	viper.SetDefault("erc4337_bundler_is_op_stack_network", false)
 	viper.SetDefault("erc4337_bundler_is_rip7212_supported", false)
 	viper.SetDefault("erc4337_bundler_debug_mode", true)
 	viper.SetDefault("erc4337_bundler_gin_mode", gin.ReleaseMode)
 	viper.SetDefault("erc4337_bundler_native_bundler_collector_tracer", CollectorTracer)
 	viper.SetDefault("erc4337_bundler_native_bundler_executor_tracer", ExecutorTracer)
+	viper.SetDefault("erc4337_bundler_status_timeout", time.Second*300)
 
 	// Read in from .env file if available
 	viper.SetConfigName(".env")
@@ -132,6 +137,7 @@ func GetValues() *Values {
 	_ = viper.BindEnv("erc4337_bundler_op_lookup_limit")
 	_ = viper.BindEnv("erc4337_bundler_eth_builder_urls")
 	_ = viper.BindEnv("erc4337_bundler_blocks_in_the_future")
+	_ = viper.BindEnv("erc4337_bundler_otel_is_enabled")
 	_ = viper.BindEnv("erc4337_bundler_otel_service_name")
 	_ = viper.BindEnv("erc4337_bundler_otel_collector_headers")
 	_ = viper.BindEnv("erc4337_bundler_otel_collector_url")
@@ -143,6 +149,7 @@ func GetValues() *Values {
 	_ = viper.BindEnv("erc4337_bundler_debug_mode")
 	_ = viper.BindEnv("erc4337_bundler_gin_mode")
 	_ = viper.BindEnv("solver_url")
+	_ = viper.BindEnv("erc4337_bundler_status_timeout")
 
 	// Validate required variables
 	if variableNotSetOrIsNil("erc4337_bundler_eth_client_url") {
@@ -199,6 +206,7 @@ func GetValues() *Values {
 	opLookupLimit := viper.GetUint64("erc4337_bundler_op_lookup_limit")
 	ethBuilderUrls := envArrayToStringSlice(viper.GetString("erc4337_bundler_eth_builder_urls"))
 	blocksInTheFuture := viper.GetInt("erc4337_bundler_blocks_in_the_future")
+	otelIsEnabled := viper.GetBool("erc4337_bundler_otel_is_enabled")
 	otelServiceName := viper.GetString("erc4337_bundler_otel_service_name")
 	otelCollectorHeader := envKeyValStringToMap(viper.GetString("erc4337_bundler_otel_collector_headers"))
 	otelCollectorUrl := viper.GetString("erc4337_bundler_otel_collector_url")
@@ -210,6 +218,7 @@ func GetValues() *Values {
 	debugMode := viper.GetBool("erc4337_bundler_debug_mode")
 	ginMode := viper.GetString("erc4337_bundler_gin_mode")
 	solverURL := viper.GetString("solver_url")
+	useropStatusWaitTime := viper.GetDuration("erc4337_bundler_status_timeout")
 
 	return &Values{
 		PrivateKey:                   privateKey,
@@ -227,6 +236,7 @@ func GetValues() *Values {
 		ReputationConstants:          NewReputationConstantsFromEnv(),
 		EthBuilderUrls:               ethBuilderUrls,
 		BlocksInTheFuture:            blocksInTheFuture,
+		OTELIsEnabled:                otelIsEnabled,
 		OTELServiceName:              otelServiceName,
 		OTELCollectorHeaders:         otelCollectorHeader,
 		OTELCollectorUrl:             otelCollectorUrl,
@@ -238,6 +248,7 @@ func GetValues() *Values {
 		DebugMode:                    debugMode,
 		GinMode:                      ginMode,
 		SolverURL:                    solverURL,
+		StatusTimeout:                useropStatusWaitTime,
 	}
 }
 

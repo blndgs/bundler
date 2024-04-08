@@ -1,4 +1,4 @@
-package o11y
+package rpc
 
 import (
 	"context"
@@ -19,7 +19,7 @@ import (
 	"google.golang.org/grpc/credentials"
 )
 
-type Opts struct {
+type options struct {
 	ServiceName     string
 	CollectorHeader map[string]string
 	CollectorUrl    string
@@ -30,7 +30,15 @@ type Opts struct {
 	Address common.Address
 }
 
-func initResources(opts *Opts) *resource.Resource {
+func initResources(opts *options) *resource.Resource {
+	if opts.ChainID == nil {
+		log.Fatal("please provide a valid chain ID")
+	}
+
+	if opts.Address.Hex() == "" {
+		log.Fatal("please provide a valid bundler address")
+	}
+
 	resources, err := resource.New(
 		context.Background(),
 		resource.WithAttributes(
@@ -47,11 +55,7 @@ func initResources(opts *Opts) *resource.Resource {
 	return resources
 }
 
-func IsEnabled(serviceName string) bool {
-	return len(serviceName) > 0
-}
-
-func InitTracer(opts *Opts) func() {
+func initTracer(opts *options) func() {
 	secureOption := otlptracegrpc.WithTLSCredentials(credentials.NewClientTLSFromCert(nil, ""))
 	if opts.InsecureMode {
 		secureOption = otlptracegrpc.WithInsecure()
@@ -83,7 +87,7 @@ func InitTracer(opts *Opts) func() {
 	}
 }
 
-func InitMetrics(opts *Opts) func() {
+func initMetrics(opts *options) func() {
 	secureOption := otlpmetricgrpc.WithTLSCredentials(credentials.NewClientTLSFromCert(nil, ""))
 	if opts.InsecureMode {
 		secureOption = otlpmetricgrpc.WithInsecure()

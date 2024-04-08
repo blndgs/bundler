@@ -1,4 +1,4 @@
-package main
+package rpc
 
 import (
 	"context"
@@ -23,11 +23,13 @@ import (
 	"github.com/stackup-wallet/stackup-bundler/pkg/client"
 	"github.com/stackup-wallet/stackup-bundler/pkg/jsonrpc"
 
+	"github.com/blndgs/bundler/conf"
 	"github.com/blndgs/bundler/srv"
 )
 
 // ExtERC4337Controller extends the default JSON-RPC controller to handle non-ERC4337 Ethereum RPC methods.
-func ExtERC4337Controller(hashesMap *xsync.MapOf[string, srv.OpHashes], rpcAdapter *client.RpcAdapter, rpcClient *rpc.Client, ethRPCClient *ethclient.Client) gin.HandlerFunc {
+func ExtERC4337Controller(hashesMap *xsync.MapOf[string, srv.OpHashes], rpcAdapter *client.RpcAdapter,
+	rpcClient *rpc.Client, ethRPCClient *ethclient.Client, values *conf.Values) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if c.Request.Method != "POST" {
 			jsonrpcError(c, -32700, "Parse error", "POST method excepted", nil)
@@ -76,7 +78,7 @@ func ExtERC4337Controller(hashesMap *xsync.MapOf[string, srv.OpHashes], rpcAdapt
 		println()
 
 		if isStdEthereumRPCMethod(method) || strings.ToLower(method) == "eth_senduseroperation" {
-			routeStdEthereumRPCRequest(c, rpcAdapter, method, rpcClient, ethRPCClient, hashesMap, data)
+			routeStdEthereumRPCRequest(c, rpcAdapter, method, rpcClient, ethRPCClient, hashesMap, data, values)
 
 			return
 		}
@@ -124,14 +126,16 @@ func isStdEthereumRPCMethod(method string) bool {
 	return !isBundlerMethod
 }
 
-func routeStdEthereumRPCRequest(c *gin.Context, rpcAdapter *client.RpcAdapter, method string, rpcClient *rpc.Client, ethClient *ethclient.Client, hashesMap *xsync.MapOf[string, srv.OpHashes], requestData map[string]any) {
+func routeStdEthereumRPCRequest(c *gin.Context, rpcAdapter *client.RpcAdapter, method string, rpcClient *rpc.Client, ethClient *ethclient.Client,
+	hashesMap *xsync.MapOf[string, srv.OpHashes], requestData map[string]any, values *conf.Values) {
+
 	const (
 		ethCall = "eth_call"
 	)
 
 	switch strings.ToLower(method) {
 	case "eth_senduseroperation":
-		handleEthSendUserOperation(c, rpcAdapter, ethClient, hashesMap, requestData)
+		handleEthSendUserOperation(c, rpcAdapter, ethClient, hashesMap, requestData, values)
 	case ethCall:
 		handleEthCallRequest(c, ethClient, requestData)
 	default:
@@ -311,39 +315,44 @@ type HashesResponse struct {
 	Trx string `json:"trx"`
 }
 
-func waitForUserOpCompletion(ctx context.Context, ethClient *ethclient.Client, txHashes *xsync.MapOf[string, srv.OpHashes], userOpHash common.Hash) (*HashesResponse, error) {
+func waitForUserOpCompletion(ctx context.Context, ethClient *ethclient.Client, txHashes *xsync.MapOf[string, srv.OpHashes],
+	userOpHash common.Hash, waitTimeout time.Duration) (*HashesResponse, error) {
+
 	const (
-		waitTimeout = 300 * time.Second
-		ticking     = 500 * time.Millisecond
+		ticking = 500 * time.Millisecond
 	)
 
 	ticker := time.NewTicker(ticking)
 	defer ticker.Stop()
 
-	timeout := time.After(waitTimeout)
+	timeoutCtx, cancelTimeoutCtx := context.WithTimeout(context.Background(), waitTimeout)
+	defer cancelTimeoutCtx()
 
 	for {
 		select {
 		case <-ticker.C:
 			opHash := userOpHash.String()
-			if txHashes, ok := txHashes.Load(opHash); ok { // Retrieve the transaction hash from sync.Map
-				receipt, err := ethClient.TransactionReceipt(ctx, txHashes.Trx)
-				if err != nil {
-					if errors.Is(err, ethereum.NotFound) {
-						// Transaction not mined yet, continue waiting
-						continue
-					}
-				}
-
-				return &HashesResponse{
-					Success:      receipt.Status == types.ReceiptStatusSuccessful,
-					OriginalHash: opHash,
-					SolvedHash:   txHashes.Solved,
-					Trx:          txHashes.Trx.String(),
-				}, err
+			txHashes, ok := txHashes.Load(opHash) // Retrieve the transaction hash from sync.Map
+			if !ok {
+				return nil, fmt.Errorf("hash not found or has been dropped (%s)", opHash)
 			}
 
-		case <-timeout:
+			receipt, err := ethClient.TransactionReceipt(ctx, txHashes.Trx)
+			if err != nil {
+				if errors.Is(err, ethereum.NotFound) {
+					// Transaction not mined yet, continue waiting
+					continue
+				}
+			}
+
+			return &HashesResponse{
+				Success:      receipt.Status == types.ReceiptStatusSuccessful,
+				OriginalHash: opHash,
+				SolvedHash:   txHashes.Solved,
+				Trx:          txHashes.Trx.String(),
+			}, err
+
+		case <-timeoutCtx.Done():
 			return nil, fmt.Errorf("timeout waiting for user operation completion")
 
 		case <-ctx.Done():
@@ -352,7 +361,9 @@ func waitForUserOpCompletion(ctx context.Context, ethClient *ethclient.Client, t
 	}
 }
 
-func handleEthSendUserOperation(c *gin.Context, rpcAdapter *client.RpcAdapter, ethClient *ethclient.Client, hashesMap *xsync.MapOf[string, srv.OpHashes], requestData map[string]any) {
+func handleEthSendUserOperation(c *gin.Context, rpcAdapter *client.RpcAdapter, ethClient *ethclient.Client,
+	hashesMap *xsync.MapOf[string, srv.OpHashes], requestData map[string]any, values *conf.Values) {
+
 	var op map[string]any
 	if err := mapstructure.Decode(requestData["params"].([]interface{})[0], &op); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid user operation"})
@@ -367,7 +378,7 @@ func handleEthSendUserOperation(c *gin.Context, rpcAdapter *client.RpcAdapter, e
 		return
 	}
 
-	resp, err := waitForUserOpCompletion(c.Request.Context(), ethClient, hashesMap, common.HexToHash(userOpHash))
+	resp, err := waitForUserOpCompletion(c.Request.Context(), ethClient, hashesMap, common.HexToHash(userOpHash), values.StatusTimeout)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

@@ -90,3 +90,8 @@ func (v *Validator) OpValues() modules.UserOpHandlerFunc {
 		return nil
 	}
 }
+
+func (v *Validator) ToStandaloneCheck() *checks.Standalone {
+	return checks.New(v.db, v.rpc, v.ov, v.alt, v.maxVerificationGas,
+		v.maxBatchGasLimit, v.isRIP7212Supported, v.tracer, v.repConst)
+}
