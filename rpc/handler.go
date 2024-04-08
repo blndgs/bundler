@@ -332,22 +332,25 @@ func waitForUserOpCompletion(ctx context.Context, ethClient *ethclient.Client, t
 		select {
 		case <-ticker.C:
 			opHash := userOpHash.String()
-			if txHashes, ok := txHashes.Load(opHash); ok { // Retrieve the transaction hash from sync.Map
-				receipt, err := ethClient.TransactionReceipt(ctx, txHashes.Trx)
-				if err != nil {
-					if errors.Is(err, ethereum.NotFound) {
-						// Transaction not mined yet, continue waiting
-						continue
-					}
-				}
-
-				return &HashesResponse{
-					Success:      receipt.Status == types.ReceiptStatusSuccessful,
-					OriginalHash: opHash,
-					SolvedHash:   txHashes.Solved,
-					Trx:          txHashes.Trx.String(),
-				}, err
+			txHashes, ok := txHashes.Load(opHash) // Retrieve the transaction hash from sync.Map
+			if !ok {
+				return nil, fmt.Errorf("hash not found or has been dropped (%s)", opHash)
 			}
+
+			receipt, err := ethClient.TransactionReceipt(ctx, txHashes.Trx)
+			if err != nil {
+				if errors.Is(err, ethereum.NotFound) {
+					// Transaction not mined yet, continue waiting
+					continue
+				}
+			}
+
+			return &HashesResponse{
+				Success:      receipt.Status == types.ReceiptStatusSuccessful,
+				OriginalHash: opHash,
+				SolvedHash:   txHashes.Solved,
+				Trx:          txHashes.Trx.String(),
+			}, err
 
 		case <-timeoutCtx.Done():
 			return nil, fmt.Errorf("timeout waiting for user operation completion")
