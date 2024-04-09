@@ -24,8 +24,8 @@ RUN set -x && apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -
     rm -rf /var/lib/apt/lists/*
 
 # Copy the binary to the production image from the builder stage.
-COPY --from=builder /app/stackup-bundler /app/stackup-bundler
+COPY --from=builder /app/bundler /app/bundler
 
 EXPOSE 4337
 
-CMD ["/app/stackup-bundler"]
+CMD ["/app/bundler"]
