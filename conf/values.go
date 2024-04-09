@@ -100,7 +100,6 @@ func GetValues() *Values {
 	viper.SetDefault("erc4337_bundler_op_lookup_limit", OpLookupLimit)
 	viper.SetDefault("erc4337_bundler_blocks_in_the_future", 6)
 	viper.SetDefault("erc4337_bundler_otel_insecure_mode", false)
-	viper.SetDefault("erc4337_bundler_otel_service_name", DefaultBundlerServiceName)
 	viper.SetDefault("erc4337_bundler_is_op_stack_network", false)
 	viper.SetDefault("erc4337_bundler_is_rip7212_supported", false)
 	viper.SetDefault("erc4337_bundler_debug_mode", true)
