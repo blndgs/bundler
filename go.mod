@@ -3,7 +3,7 @@ module github.com/blndgs/bundler
 go 1.20
 
 require (
-	github.com/blndgs/model v0.18.1
+	github.com/blndgs/model v0.18.2
 	github.com/dgraph-io/badger/v3 v3.2103.5
 	github.com/ethereum/go-ethereum v1.11.5
 	github.com/gin-contrib/cors v1.7.1
