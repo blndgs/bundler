@@ -109,6 +109,7 @@ func (ei *IntentsHandler) SolveIntents() modules.BatchHandlerFunc {
 
 		// Intents to process
 		if len(body.UserOps) == 0 {
+
 			return nil
 		}
 
@@ -178,7 +179,7 @@ func ReportSolverHealth(solverURL string) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("Solver health check returned non-OK status: %s", resp.Status)
+		return fmt.Errorf("solver health check returned non-OK status: %s", resp.Status)
 	}
 
 	fmt.Println("Solver health response: ", resp.Status)
@@ -213,7 +214,7 @@ func (ei *IntentsHandler) sendToSolver(body model.BodyOfUserOps) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("Solver returned non-OK status: %s", resp.Status)
+		return fmt.Errorf("solver returned non-OK status: %s", resp.Status)
 	}
 
 	return json.NewDecoder(resp.Body).Decode(&body)
