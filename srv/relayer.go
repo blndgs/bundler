@@ -96,14 +96,15 @@ func (r *Relayer) SendUserOperation() modules.BatchHandlerFunc {
 		}
 		// Estimate gas for handleOps() and drop all userOps that cause unexpected reverts.
 		for len(ctx.Batch) > 0 {
-			est, revert, err := transaction.EstimateHandleOpsGas(&opts)
-
-			if err != nil {
-				return err
-			} else if revert != nil {
+			est, revert, err := estimateHandleOpsGas(&opts)
+			if revert != nil {
 				ctx.MarkOpIndexForRemoval(revert.OpIndex, revert.Reason)
+			} else if err != nil {
+				err = fmt.Errorf("failed to estimate gas for handleOps likely not enough gas: %w", err)
+				ctx.MarkOpIndexForRemoval(0, err.Error())
 			} else {
 				opts.GasLimit = est
+				opts.GasPrice = ctx.GasPrice
 				break
 			}
 		}
