@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/blndgs/model"
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -22,6 +23,7 @@ import (
 	"github.com/puzpuzpuz/xsync/v3"
 	"github.com/stackup-wallet/stackup-bundler/pkg/client"
 	"github.com/stackup-wallet/stackup-bundler/pkg/jsonrpc"
+	"github.com/stackup-wallet/stackup-bundler/pkg/userop"
 
 	"github.com/blndgs/bundler/conf"
 	"github.com/blndgs/bundler/srv"
@@ -373,6 +375,27 @@ func handleEthSendUserOperation(c *gin.Context, rpcAdapter *client.RpcAdapter, e
 	}
 
 	ep := requestData["params"].([]interface{})[1].(string)
+
+	uo, err := userop.New(op)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("failed to parse user operation: %s", err)})
+		return
+	}
+
+	mUo := (model.UserOperation)(*uo)
+	if mUo.HasIntent() {
+		i, err := mUo.GetIntent()
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("failed to parse intent: %s", err)})
+		}
+
+		uoSender := mUo.Sender.String()
+		if strings.ToLower(uoSender) != strings.ToLower(i.Sender) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf(
+				"sender address in user operation %s does not match the intent %s", uoSender, i.Sender)})
+			return
+		}
+	}
 
 	userOpHash, err := rpcAdapter.Eth_sendUserOperation(op, ep)
 	if err != nil {
