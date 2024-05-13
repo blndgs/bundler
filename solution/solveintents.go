@@ -109,6 +109,7 @@ func (ei *IntentsHandler) SolveIntents() modules.BatchHandlerFunc {
 
 		// Intents to process
 		if len(body.UserOps) == 0 {
+
 			return nil
 		}
 
@@ -130,16 +131,16 @@ func (ei *IntentsHandler) SolveIntents() modules.BatchHandlerFunc {
 				println("****************************************************")
 				println()
 			case model.Solved:
-				// set the solved userOp values to the received batch's userOp values
+				// copy the solved userOp values to the received batch's userOp values
 				ctx.Batch[batchIndex].CallData = make([]byte, len(body.UserOps[idx].CallData))
 				copy(ctx.Batch[batchIndex].CallData, body.UserOps[idx].CallData)
 				ctx.Batch[batchIndex].Signature = make([]byte, len(body.UserOps[idx].Signature))
 				copy(ctx.Batch[batchIndex].Signature, body.UserOps[idx].Signature)
-				ctx.Batch[batchIndex].CallGasLimit = body.UserOps[idx].CallGasLimit
-				ctx.Batch[batchIndex].VerificationGasLimit = body.UserOps[idx].VerificationGasLimit
-				ctx.Batch[batchIndex].PreVerificationGas = body.UserOps[idx].PreVerificationGas
-				ctx.Batch[batchIndex].MaxFeePerGas = body.UserOps[idx].MaxFeePerGas
-				ctx.Batch[batchIndex].MaxPriorityFeePerGas = body.UserOps[idx].MaxPriorityFeePerGas
+				ctx.Batch[batchIndex].CallGasLimit.Set(body.UserOps[idx].CallGasLimit)
+				ctx.Batch[batchIndex].VerificationGasLimit.Set(body.UserOps[idx].VerificationGasLimit)
+				ctx.Batch[batchIndex].PreVerificationGas.Set(body.UserOps[idx].PreVerificationGas)
+				ctx.Batch[batchIndex].MaxFeePerGas.Set(body.UserOps[idx].MaxFeePerGas)
+				ctx.Batch[batchIndex].MaxPriorityFeePerGas.Set(body.UserOps[idx].MaxPriorityFeePerGas)
 
 			default:
 				return errors.Errorf("unknown processing status: %s", opExt.ProcessingStatus)
@@ -178,7 +179,7 @@ func ReportSolverHealth(solverURL string) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("Solver health check returned non-OK status: %s", resp.Status)
+		return fmt.Errorf("solver health check returned non-OK status: %s", resp.Status)
 	}
 
 	fmt.Println("Solver health response: ", resp.Status)
@@ -213,7 +214,7 @@ func (ei *IntentsHandler) sendToSolver(body model.BodyOfUserOps) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("Solver returned non-OK status: %s", resp.Status)
+		return fmt.Errorf("solver returned non-OK status: %s", resp.Status)
 	}
 
 	return json.NewDecoder(resp.Body).Decode(&body)

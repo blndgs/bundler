@@ -8,6 +8,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/gin-gonic/gin"
+	"github.com/pkg/errors"
 	"github.com/spf13/viper"
 	"github.com/stackup-wallet/stackup-bundler/pkg/modules/entities"
 	"github.com/stackup-wallet/stackup-bundler/pkg/signer"
@@ -113,11 +114,13 @@ func GetValues() *Values {
 	viper.SetConfigType("env")
 	viper.AddConfigPath(".")
 	if err := viper.ReadInConfig(); err != nil {
-		if _, ok := err.(viper.ConfigFileNotFoundError); ok {
-			// Config file not found
-			// Can ignore
+		var configFileNotFoundError viper.ConfigFileNotFoundError
+		if errors.As(err, &configFileNotFoundError) {
+			// Specific handling for config file not found
+			panic(fmt.Errorf("config file not found: %w", err))
 		} else {
-			panic(fmt.Errorf("fatal error config file: %w", err))
+			// unknown config error: permission?
+			panic(fmt.Errorf("unknown problem reading config file: %w", err))
 		}
 	}
 

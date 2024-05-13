@@ -1,17 +1,25 @@
 package srv
 
 import (
+	"context"
+	"fmt"
+	"math"
 	"math/big"
 	"time"
 
 	"github.com/blndgs/model"
+	"github.com/ethereum/go-ethereum"
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/go-logr/logr"
 	"github.com/puzpuzpuz/xsync/v3"
+	"github.com/stackup-wallet/stackup-bundler/pkg/entrypoint"
+	"github.com/stackup-wallet/stackup-bundler/pkg/entrypoint/reverts"
 	"github.com/stackup-wallet/stackup-bundler/pkg/entrypoint/transaction"
 	"github.com/stackup-wallet/stackup-bundler/pkg/modules"
 	"github.com/stackup-wallet/stackup-bundler/pkg/signer"
+	"github.com/stackup-wallet/stackup-bundler/pkg/userop"
 )
 
 const (
@@ -96,14 +104,15 @@ func (r *Relayer) SendUserOperation() modules.BatchHandlerFunc {
 		}
 		// Estimate gas for handleOps() and drop all userOps that cause unexpected reverts.
 		for len(ctx.Batch) > 0 {
-			est, revert, err := transaction.EstimateHandleOpsGas(&opts)
-
-			if err != nil {
-				return err
-			} else if revert != nil {
+			est, revert, err := estimateHandleOpsGas(&opts)
+			if revert != nil {
 				ctx.MarkOpIndexForRemoval(revert.OpIndex, revert.Reason)
+			} else if err != nil {
+				err = fmt.Errorf("failed to estimate gas for handleOps likely not enough gas: %w", err)
+				ctx.MarkOpIndexForRemoval(0, err.Error())
 			} else {
 				opts.GasLimit = est
+				opts.GasPrice = ctx.GasPrice
 				break
 			}
 		}
@@ -140,4 +149,57 @@ func (r *Relayer) SendUserOperation() modules.BatchHandlerFunc {
 
 		return nil
 	}
+}
+
+// estimateHandleOpsGas returns a gas estimate required to call handleOps() with a given batch. A failed call
+// will return the cause of the revert.
+// Copied from stackup to keep the gas price from the batch context and avoid a negative gas result.
+func estimateHandleOpsGas(opts *transaction.Opts) (gas uint64, revert *reverts.FailedOpRevert, err error) {
+	castToEPType := func(batch []*userop.UserOperation) []entrypoint.UserOperation {
+		length := len(batch)
+		ops := make([]entrypoint.UserOperation, length)
+		for i := 0; i < length; i++ {
+			ops[i] = entrypoint.UserOperation(*batch[i])
+		}
+
+		return ops
+	}
+
+	ep, err := entrypoint.NewEntrypoint(opts.EntryPoint, opts.Eth)
+	if err != nil {
+		return 0, nil, err
+	}
+
+	auth, err := bind.NewKeyedTransactorWithChainID(opts.EOA.PrivateKey, opts.ChainID)
+	if err != nil {
+		return 0, nil, err
+	}
+	auth.GasLimit = math.MaxUint64
+	auth.NoSend = true
+
+	tx, err := ep.HandleOps(auth, castToEPType(opts.Batch), opts.Beneficiary)
+	if err != nil {
+		return 0, nil, err
+	}
+
+	est, err := opts.Eth.EstimateGas(context.Background(), ethereum.CallMsg{
+		From: opts.EOA.Address,
+		To:   tx.To(),
+		Gas:  tx.Gas(),
+		// GasPrice:   opts.GasPrice, Using the gas price from tx results in negative gas estimation.
+		GasFeeCap:  tx.GasFeeCap(),
+		GasTipCap:  tx.GasTipCap(),
+		Value:      tx.Value(),
+		Data:       tx.Data(),
+		AccessList: tx.AccessList(),
+	})
+	if err != nil {
+		revert, err := reverts.NewFailedOp(err)
+		if err != nil {
+			return 0, nil, err
+		}
+		return 0, revert, nil
+	}
+
+	return est, nil, nil
 }
