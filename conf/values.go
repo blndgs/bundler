@@ -115,13 +115,11 @@ func GetValues() *Values {
 	viper.AddConfigPath(".")
 	if err := viper.ReadInConfig(); err != nil {
 		var configFileNotFoundError viper.ConfigFileNotFoundError
-		if errors.As(err, &configFileNotFoundError) {
-			// Specific handling for config file not found
-			panic(fmt.Errorf("config file not found: %w", err))
-		} else {
-			// unknown config error: permission?
-			panic(fmt.Errorf("unknown problem reading config file: %w", err))
+		// config file is optional
+		if !errors.As(err, &configFileNotFoundError) {
+			panic(fmt.Errorf("fatal error reading config file: %w", err))
 		}
+		// use env vars instead
 	}
 
 	// Read in from environment variables
