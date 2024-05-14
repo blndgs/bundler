@@ -4,6 +4,7 @@ on:
  
   push:
     branches: [ main ]
+  workflow_dispatch:
 
 jobs:
   
@@ -40,6 +41,7 @@ jobs:
     name: Deploy Image and Env Variables
     needs: build
     runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
     steps:
       - uses: actions/checkout@v2
       - name: Deploy
