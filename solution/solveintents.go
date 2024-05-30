@@ -30,6 +30,8 @@ import (
 	"github.com/goccy/go-json"
 	"github.com/pkg/errors"
 
+	pb "github.com/blndgs/model/gen/go/proto/v1"
+
 	"github.com/stackup-wallet/stackup-bundler/pkg/modules"
 	"github.com/stackup-wallet/stackup-bundler/pkg/userop"
 )
@@ -75,7 +77,7 @@ func (ei *IntentsHandler) bufferIntentOps(entrypoint common.Address, chainID *bi
 			body.UserOpsExt = append(body.UserOpsExt, model.UserOperationExt{
 				OriginalHashValue: hashID,
 				// Cache hash before it changes
-				ProcessingStatus: model.Received,
+				ProcessingStatus: pb.ProcessingStatus_PROCESSING_STATUS_RECEIVED,
 			})
 
 			// Reverse caching
@@ -122,15 +124,16 @@ func (ei *IntentsHandler) SolveIntents() modules.BatchHandlerFunc {
 			// print to stdout the userOp and Intent JSON
 			fmt.Println("Solver response, status:", opExt.ProcessingStatus, ", batchIndex:", batchIndex, ", hash:", body.UserOpsExt[idx].OriginalHashValue)
 			switch opExt.ProcessingStatus {
-			case model.Unsolved, model.Expired, model.Invalid, model.Received:
+			case pb.ProcessingStatus_PROCESSING_STATUS_UNSOLVED, pb.ProcessingStatus_PROCESSING_STATUS_EXPIRED,
+				pb.ProcessingStatus_PROCESSING_STATUS_INVALID, pb.ProcessingStatus_PROCESSING_STATUS_RECEIVED:
 				// dropping further processing
-				ctx.MarkOpIndexForRemoval(int(batchIndex), string("intent uo not solved:"+opExt.ProcessingStatus))
+				ctx.MarkOpIndexForRemoval(int(batchIndex), string("intent uo not solved:"+opExt.ProcessingStatus.String()))
 				println()
 				println("****************************************************")
 				println("Solver dropping userOp: ", body.UserOps[idx].String(), " with status: ", opExt.ProcessingStatus)
 				println("****************************************************")
 				println()
-			case model.Solved:
+			case pb.ProcessingStatus_PROCESSING_STATUS_SOLVED:
 				// copy the solved userOp values to the received batch's userOp values
 				ctx.Batch[batchIndex].CallData = make([]byte, len(body.UserOps[idx].CallData))
 				copy(ctx.Batch[batchIndex].CallData, body.UserOps[idx].CallData)
