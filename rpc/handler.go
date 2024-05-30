@@ -387,6 +387,7 @@ func handleEthSendUserOperation(c *gin.Context, rpcAdapter *client.RpcAdapter, e
 		i, err := mUo.GetIntent()
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("failed to parse intent: %s", err)})
+			return
 		}
 
 		uoSender := mUo.Sender.String()
