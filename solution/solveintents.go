@@ -75,9 +75,9 @@ func (ei *IntentsHandler) bufferIntentOps(entrypoint common.Address, chainID *bi
 			body.UserOps = append(body.UserOps, &clonedOp)
 
 			body.UserOpsExt = append(body.UserOpsExt, model.UserOperationExt{
-				OriginalHashValue: hashID,
 				// Cache hash before it changes
-				ProcessingStatus: pb.ProcessingStatus_PROCESSING_STATUS_RECEIVED,
+				OriginalHashValue: hashID,
+				ProcessingStatus:  pb.ProcessingStatus_PROCESSING_STATUS_RECEIVED,
 			})
 
 			// Reverse caching
@@ -111,7 +111,6 @@ func (ei *IntentsHandler) SolveIntents() modules.BatchHandlerFunc {
 
 		// Intents to process
 		if len(body.UserOps) == 0 {
-
 			return nil
 		}
 
