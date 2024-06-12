@@ -20,16 +20,16 @@ jobs:
         run: |
           echo "Running on branch: ${{ github.ref_name }}"
           if [[ -n "${{ github.base_ref }}" ]]; then
-          echo "Target branch for pull request: ${{ github.base_ref }}"
+            echo "Target branch for pull request: ${{ github.base_ref }}"
           else
-          echo "Not running on a pull request"
+            echo "Not running on a pull request"
           fi
 
       - name: Determine Environment Prefix
         id: env_prefix
         run: |
           BRANCH=${{ github.base_ref }}  # This is set for pull requests
-          [ -z "$BRANCH" ] && BRANCH=${{ github.ref_name }}  # Fallback to current branch if not a pull request 
+          [ -z "$BRANCH" ] && BRANCH=${{ github.ref_name }}  # Fallback to current branch if not a pull request
           PREFIX=$(echo $BRANCH | awk -F'-' '{print toupper($1)}')  # Extract prefix and convert to upper case
           echo "PREFIX=$PREFIX" >> $GITHUB_ENV
           echo "PREFIX=$PREFIX"
@@ -53,6 +53,7 @@ jobs:
         run: |
           docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+
   deploy:
     name: Deploy Image and Env Variables
     needs: build
@@ -72,13 +73,11 @@ jobs:
           command: |
             aws ecr get-login-password --region ${{ secrets[format('{0}_AWS_REGION', env.PREFIX)] }} | docker login --username AWS --password-stdin ${{ secrets[format('{0}_ECR_URL', env.PREFIX)] }}
             yq w -i docker-compose.yaml 'services.bundler.image' ${{ secrets[format('{0}_ECR_URL', env.PREFIX)] }}/${{ secrets[format('{0}_AWS_REPOSITORY', env.PREFIX)] }}:${{ github.sha }}
-            yq w -i docker-compose.yaml 'services.bundler.environment[0]' "ERC4337_BUNDLER_ETH_CLIENT_URL=${{ secrets[format('{0}_ERC4337_BUNDLER_ETH_CLIENT_URL }}"
-            yq w -i docker-compose.yaml 'services.bundler.environment[1]' "ERC4337_BUNDLER_PRIVATE_KEY=${{ secrets[format('{0}_ERC4337_BUNDLER_PRIVATE_KEY }}"
-            yq w -i docker-compose.yaml 'services.bundler.environment[2]' "ERC4337_BUNDLER_MAX_BATCH_GAS_LIMIT=${{ secrets[format('{0}_ERC4337_BUNDLER_MAX_BATCH_GAS_LIMIT }}"
+            yq w -i docker-compose.yaml 'services.bundler.environment[0]' "ERC4337_BUNDLER_ETH_CLIENT_URL=${{ secrets[format('{0}_ERC4337_BUNDLER_ETH_CLIENT_URL', env.PREFIX)] }}"
+            yq w -i docker-compose.yaml 'services.bundler.environment[1]' "ERC4337_BUNDLER_PRIVATE_KEY=${{ secrets[format('{0}_ERC4337_BUNDLER_PRIVATE_KEY', env.PREFIX)] }}"
+            yq w -i docker-compose.yaml 'services.bundler.environment[2]' "ERC4337_BUNDLER_MAX_BATCH_GAS_LIMIT=${{ secrets[format('{0}_ERC4337_BUNDLER_MAX_BATCH_GAS_LIMIT', env.PREFIX)] }}"
             yq w -i docker-compose.yaml 'services.bundler.environment[3]' "ERC4337_BUNDLER_DEBUG_MODE=${{ secrets[format('{0}_ERC4337_BUNDLER_DEBUG_MODE', env.PREFIX)] }}"
             yq w -i docker-compose.yaml 'services.bundler.environment[4]' "SOLVER_URL=${{ secrets[format('{0}_SOLVER_URL', env.PREFIX)] }}"
             docker-compose up -d
-
-      # Catch SSM outputs
       - name: Get the outputs from Deploy image
         run: echo "The Command id is ${{ steps.deploy.outputs.command-id }}"
