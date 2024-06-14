@@ -1,68 +1,89 @@
 name: Deploy to ECR
 
 on:
- 
+  pull_request:
+    types: [opened, reopened, synchronize]
   push:
-    branches: [ main ]
+    branches: [main, testnet, live, stage]
   workflow_dispatch:
 
 jobs:
-  
   build:
-    
     name: Build Image
     runs-on: ubuntu-latest
-   
+
     steps:
+      - name: Check out code
+        uses: actions/checkout@v2
 
-    - name: Check out code
-      uses: actions/checkout@v2
-    
-    - name: Configure AWS credentials
-      uses: aws-actions/configure-aws-credentials@v1
-      with:
-        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        aws-region: ${{ vars.AWS_REGION }}
+      - name: Enforce module version
+        uses: adelowo/enforce-gomod-version@v0.2.0
+        with:
+          modules: |
+            github.com/ethereum/go-ethereum => v1.11.5
 
-    - name: Login to Amazon ECR
-      id: login-ecr
-      uses: aws-actions/amazon-ecr-login@v1
+      - name: Display branch information
+        run: |
+          echo "Running on branch: ${{ github.ref_name }}"
+          if [[ -n "${{ github.base_ref }}" ]]; then
+            echo "Target branch for pull request: ${{ github.base_ref }}"
+          else
+            echo "Not running on a pull request"
+          fi
 
-    - name: Build, tag, and push image to Amazon ECR
-      env:
-        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-        ECR_REPOSITORY: ${{ vars.AWS_REPOSITORY }}
-        IMAGE_TAG: ${{ github.sha }}
-      run: |
-        docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
-        docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+      - name: Determine Environment Prefix
+        id: env_prefix
+        run: |
+          BRANCH=${{ github.base_ref }}  # This is set for pull requests
+          [ -z "$BRANCH" ] && BRANCH=${{ github.ref_name }}  # Fallback to current branch if not a pull request
+          PREFIX=$(echo $BRANCH | awk -F'-' '{print toupper($1)}')  # Extract prefix and convert to upper case
+          echo "PREFIX=$PREFIX" >> $GITHUB_ENV
+          echo "PREFIX=$PREFIX"
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets[format('{0}_AWS_ACCESS_KEY_ID', env.PREFIX)] }}
+          aws-secret-access-key: ${{ secrets[format('{0}_AWS_SECRET_ACCESS_KEY', env.PREFIX)] }}
+          aws-region: ${{ secrets[format('{0}_AWS_REGION', env.PREFIX)] }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v1
+
+      - name: Build, tag, and push image to Amazon ECR
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: ${{ secrets[format('{0}_AWS_REPOSITORY', env.PREFIX)] }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+
   deploy:
     name: Deploy Image and Env Variables
     needs: build
     runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/'))
     steps:
       - uses: actions/checkout@v2
       - name: Deploy
         uses: peterkimzz/aws-ssm-send-command@master
         id: deploy
         with:
-          aws-region: ${{ vars.AWS_REGION }}
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          instance-ids: ${{ secrets.INSTANCE_ID }}
+          aws-region: ${{ secrets[format('{0}_AWS_REGION', env.PREFIX)] }}
+          aws-access-key-id: ${{ secrets[format('{0}_AWS_ACCESS_KEY_ID', env.PREFIX)] }}
+          aws-secret-access-key: ${{ secrets[format('{0}_AWS_SECRET_ACCESS_KEY', env.PREFIX)] }}
+          instance-ids: ${{ secrets[format('{0}_INSTANCE_ID', env.PREFIX)] }}
           working-directory: /root/stackup-bundler
           command: |
-            aws ecr get-login-password --region ${{ vars.AWS_REGION }} | docker login --username AWS --password-stdin ${{ vars.ECR_URL }}
-            yq w -i docker-compose.yaml 'services.bundler.image' ${{ vars.ECR_URL }}/${{ vars.AWS_REPOSITORY }}:${{ github.sha }} 
-            yq w -i docker-compose.yaml 'services.bundler.environment[0]' "ERC4337_BUNDLER_ETH_CLIENT_URL=${{ vars.ERC4337_BUNDLER_ETH_CLIENT_URL }}" 
-            yq w -i docker-compose.yaml 'services.bundler.environment[1]' "ERC4337_BUNDLER_PRIVATE_KEY=${{ secrets.ERC4337_BUNDLER_PRIVATE_KEY }}" 
-            yq w -i docker-compose.yaml 'services.bundler.environment[2]' "ERC4337_BUNDLER_MAX_BATCH_GAS_LIMIT=${{ vars.ERC4337_BUNDLER_MAX_BATCH_GAS_LIMIT }}" 
-            yq w -i docker-compose.yaml 'services.bundler.environment[3]' "ERC4337_BUNDLER_DEBUG_MODE=${{ vars.ERC4337_BUNDLER_DEBUG_MODE }}" 
-            yq w -i docker-compose.yaml 'services.bundler.environment[4]' "SOLVER_URL=${{ vars.SOLVER_URL }}"
+            aws ecr get-login-password --region ${{ secrets[format('{0}_AWS_REGION', env.PREFIX)] }} | docker login --username AWS --password-stdin ${{ secrets[format('{0}_ECR_URL', env.PREFIX)] }}
+            yq w -i docker-compose.yaml 'services.bundler.image' ${{ secrets[format('{0}_ECR_URL', env.PREFIX)] }}/${{ secrets[format('{0}_AWS_REPOSITORY', env.PREFIX)] }}:${{ github.sha }}
+            yq w -i docker-compose.yaml 'services.bundler.environment[0]' "ERC4337_BUNDLER_ETH_CLIENT_URL=${{ secrets[format('{0}_ERC4337_BUNDLER_ETH_CLIENT_URL', env.PREFIX)] }}"
+            yq w -i docker-compose.yaml 'services.bundler.environment[1]' "ERC4337_BUNDLER_PRIVATE_KEY=${{ secrets[format('{0}_ERC4337_BUNDLER_PRIVATE_KEY', env.PREFIX)] }}"
+            yq w -i docker-compose.yaml 'services.bundler.environment[2]' "ERC4337_BUNDLER_MAX_BATCH_GAS_LIMIT=${{ secrets[format('{0}_ERC4337_BUNDLER_MAX_BATCH_GAS_LIMIT', env.PREFIX)] }}"
+            yq w -i docker-compose.yaml 'services.bundler.environment[3]' "ERC4337_BUNDLER_DEBUG_MODE=${{ secrets[format('{0}_ERC4337_BUNDLER_DEBUG_MODE', env.PREFIX)] }}"
+            yq w -i docker-compose.yaml 'services.bundler.environment[4]' "SOLVER_URL=${{ secrets[format('{0}_SOLVER_URL', env.PREFIX)] }}"
             docker-compose up -d
-
-      # Catch SSM outputs
       - name: Get the outputs from Deploy image
         run: echo "The Command id is ${{ steps.deploy.outputs.command-id }}"
