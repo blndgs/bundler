@@ -16,6 +16,12 @@ jobs:
       - name: Check out code
         uses: actions/checkout@v2
 
+      - name: Enforce module version
+        uses: adelowo/enforce-gomod-version@v0.2.0
+        with:
+          modules: |
+            github.com/ethereum/go-ethereum => v1.11.5
+
       - name: Display branch information
         run: |
           echo "Running on branch: ${{ github.ref_name }}"
