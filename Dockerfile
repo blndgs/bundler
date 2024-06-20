@@ -1,4 +1,4 @@
-FROM golang:golang:1.22.4-bullseye as builder
+FROM golang:1.22.4-bullseye as builder
 
 # Create and change to the app directory.
 WORKDIR /app
