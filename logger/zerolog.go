@@ -9,7 +9,19 @@ import (
 )
 
 // NewZeroLogr returns a Zerolog logger wrapped in a go-logr/logr interface.
-func NewZeroLogr() logr.Logger {
-	zl := zerolog.New(os.Stderr).With().Caller().Timestamp().Logger()
+func NewZeroLogr(isDebugMode bool) logr.Logger {
+
+	var level = zerolog.ErrorLevel
+	if isDebugMode {
+		level = zerolog.InfoLevel
+	}
+
+	zl := zerolog.New(os.Stderr).
+		With().
+		Caller().
+		Timestamp().
+		Logger().
+		Level(level)
+
 	return zerologr.New(&zl)
 }

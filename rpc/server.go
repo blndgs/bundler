@@ -54,7 +54,8 @@ func NewRPCServer(values *conf.Values, logger logr.Logger, relayer *srv.Relayer,
 	})
 
 	handlers := []gin.HandlerFunc{
-		ExtERC4337Controller(relayer.GetOpHashes(), rpcAdapter, rpcClient, ethClient, values),
+		ExtERC4337Controller(relayer.GetOpHashes(), rpcAdapter, rpcClient,
+			ethClient, values, logger),
 		jsonrpc.WithOTELTracerAttributes(),
 	}
 

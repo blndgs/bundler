@@ -83,6 +83,8 @@ func main() {
 		log.Fatal(err)
 	}
 
+	stdLogger := logger.NewZeroLogr(values.DebugMode)
+
 	validator := validations.New(
 		db,
 		rpcClient,
@@ -93,18 +95,18 @@ func main() {
 		false, // isRIP7212Supported
 		values.NativeBundlerCollectorTracer,
 		conf.NewReputationConstantsFromEnv(),
+		stdLogger,
 	)
 
 	exp := expire.New(time.Second * values.MaxOpTTL)
 
 	rep := entities.New(db, eth, conf.NewReputationConstantsFromEnv())
-	stdLogger := logger.NewZeroLogr()
 
 	relayer := srv.New(values.SupportedEntryPoints[0], eoa, eth, chain, beneficiary, stdLogger)
 
-	println("solver URL:", values.SolverURL)
-	solver := solution.New(values.SolverURL)
-	if err := solution.ReportSolverHealth(values.SolverURL); err != nil {
+	stdLogger.Info("Using solver url", "url", values.SolverURL)
+	solver := solution.New(values.SolverURL, stdLogger)
+	if err := solution.ReportSolverHealth(values.SolverURL, stdLogger); err != nil {
 		log.Fatal(err)
 	}
 
