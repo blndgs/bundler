@@ -102,9 +102,9 @@ func main() {
 
 	relayer := srv.New(values.SupportedEntryPoints[0], eoa, eth, chain, beneficiary, stdLogger)
 
-	println("solver URL:", values.SolverURL)
-	solver := solution.New(values.SolverURL)
-	if err := solution.ReportSolverHealth(values.SolverURL); err != nil {
+	stdLogger.Info("Using solver url", "url", values.SolverURL)
+	solver := solution.New(values.SolverURL, stdLogger)
+	if err := solution.ReportSolverHealth(values.SolverURL, stdLogger); err != nil {
 		log.Fatal(err)
 	}
 
