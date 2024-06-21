@@ -120,6 +120,7 @@ func main() {
 		exp.DropExpired(),
 		batch.SortByNonce(),
 		batch.MaintainGasLimit(values.MaxBatchGasLimit),
+		solver.ValidateIntents(),
 		solver.SolveIntents(),
 		relayer.SendUserOperation(),
 		rep.IncOpsIncluded(),
