@@ -12,6 +12,9 @@ import (
 	"github.com/stackup-wallet/stackup-bundler/pkg/modules"
 )
 
+// ValidateIntents returns a BatchHandlerFunc that will
+// send the batch of UserOperations to the Solver
+// in other to validate if the userops are valid or not
 func (ei *IntentsHandler) ValidateIntents() modules.BatchHandlerFunc {
 	return func(ctx *modules.BatchHandlerCtx) error {
 
@@ -29,6 +32,8 @@ func (ei *IntentsHandler) ValidateIntents() modules.BatchHandlerFunc {
 	}
 }
 
+// sendToSolverForValidation  sends the batch of UserOperations to the Solver.
+// to validate them
 func (ei *IntentsHandler) sendToSolverForValidation(body model.BodyOfUserOps) error {
 
 	parsedURL, err := url.Parse(ei.SolverURL)
