@@ -83,6 +83,8 @@ func main() {
 		log.Fatal(err)
 	}
 
+	stdLogger := logger.NewZeroLogr()
+
 	validator := validations.New(
 		db,
 		rpcClient,
@@ -93,12 +95,12 @@ func main() {
 		false, // isRIP7212Supported
 		values.NativeBundlerCollectorTracer,
 		conf.NewReputationConstantsFromEnv(),
+		stdLogger,
 	)
 
 	exp := expire.New(time.Second * values.MaxOpTTL)
 
 	rep := entities.New(db, eth, conf.NewReputationConstantsFromEnv())
-	stdLogger := logger.NewZeroLogr()
 
 	relayer := srv.New(values.SupportedEntryPoints[0], eoa, eth, chain, beneficiary, stdLogger)
 

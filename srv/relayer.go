@@ -108,6 +108,8 @@ func (r *Relayer) SendUserOperation() modules.BatchHandlerFunc {
 			if revert != nil {
 				ctx.MarkOpIndexForRemoval(revert.OpIndex, revert.Reason)
 			} else if err != nil {
+				r.logger.Error(err, "failed to estimate gas for handleOps")
+
 				err = fmt.Errorf("failed to estimate gas for handleOps likely not enough gas: %w", err)
 				ctx.MarkOpIndexForRemoval(0, err.Error())
 			} else {
@@ -121,6 +123,7 @@ func (r *Relayer) SendUserOperation() modules.BatchHandlerFunc {
 		// caught and dropped in the next iteration.
 		if len(ctx.Batch) > 0 {
 			if txn, err := transaction.HandleOps(&opts); err != nil {
+				r.logger.Error(err, "user ops could not be sent onchain")
 				return err
 			} else {
 				txHash := txn.Hash().String()

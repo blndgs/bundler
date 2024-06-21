@@ -8,6 +8,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/rpc"
+	"github.com/go-logr/logr"
 	"github.com/stackup-wallet/stackup-bundler/pkg/altmempools"
 	"github.com/stackup-wallet/stackup-bundler/pkg/errors"
 	"github.com/stackup-wallet/stackup-bundler/pkg/gas"
@@ -31,6 +32,7 @@ type Validator struct {
 	isRIP7212Supported bool
 	tracer             string
 	repConst           *entities.ReputationConstants
+	logger             logr.Logger
 }
 
 // New returns a Standalone instance with methods that can be used in Client and Bundler modules to perform
@@ -45,6 +47,7 @@ func New(
 	isRIP7212Supported bool,
 	tracer string,
 	repConst *entities.ReputationConstants,
+	logger logr.Logger,
 ) *Validator {
 	eth := ethclient.NewClient(rpc)
 	return &Validator{
@@ -58,6 +61,7 @@ func New(
 		isRIP7212Supported,
 		tracer,
 		repConst,
+		logger,
 	}
 }
 
@@ -85,8 +89,10 @@ func (v *Validator) OpValues() modules.UserOpHandlerFunc {
 		g.Go(func() error { return checks.ValidateGasAvailable(ctx.UserOp, v.maxBatchGasLimit) })
 
 		if err := g.Wait(); err != nil {
+			v.logger.Error(err, "could not fetch user operation values")
 			return errors.NewRPCError(errors.INVALID_FIELDS, err.Error(), err.Error())
 		}
+
 		return nil
 	}
 }
