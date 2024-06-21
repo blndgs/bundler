@@ -21,7 +21,6 @@ import (
 	"math/big"
 	"net/http"
 	"net/url"
-	"os"
 	"time"
 	"unsafe"
 
@@ -195,7 +194,7 @@ func ReportSolverHealth(solverURL string, logger logr.Logger) error {
 	}
 
 	logger.Info("Solver health check done", "status", resp.Status)
-	_, err = io.Copy(os.Stdout, resp.Body)
+	_, err = io.Copy(io.Discard, resp.Body)
 	if err != nil {
 		logger.Error(err, "could not copy response status")
 		return err

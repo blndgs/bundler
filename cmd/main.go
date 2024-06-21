@@ -83,7 +83,7 @@ func main() {
 		log.Fatal(err)
 	}
 
-	stdLogger := logger.NewZeroLogr()
+	stdLogger := logger.NewZeroLogr(values.DebugMode)
 
 	validator := validations.New(
 		db,
