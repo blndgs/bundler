@@ -399,17 +399,10 @@ func handleEthSendUserOperation(c *gin.Context, rpcAdapter *client.RpcAdapter, e
 
 	mUo := (model.UserOperation)(*uo)
 	if mUo.HasIntent() {
-		i, err := mUo.GetIntent()
+		_, err := mUo.GetIntent()
 		if err != nil {
 			logger.Error(err, "failed to parse intent")
 			c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("failed to parse intent: %s", err)})
-			return
-		}
-
-		uoSender := mUo.Sender.String()
-		if strings.ToLower(uoSender) != strings.ToLower(i.Sender) {
-			c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf(
-				"sender address in user operation %s does not match the intent %s", uoSender, i.Sender)})
 			return
 		}
 	}
