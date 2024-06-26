@@ -68,11 +68,17 @@ func ExtERC4337Controller(hashesMap *xsync.MapOf[string, srv.OpHashes],
 
 		if c.Request.Method != http.MethodPost {
 			jsonrpcError(c, -32700, "Parse error", "POST method excepted", nil)
+			err := errors.New("only POST method accepted")
+			span.SetStatus(codes.Error, err.Error())
+			span.RecordError(err)
 			return
 		}
 
 		if c.Request.Body == nil {
 			jsonrpcError(c, -32700, "Parse error", "No POST data", nil)
+			err := errors.New("POST data must be present")
+			span.SetStatus(codes.Error, err.Error())
+			span.RecordError(err)
 			return
 		}
 
@@ -100,22 +106,22 @@ func ExtERC4337Controller(hashesMap *xsync.MapOf[string, srv.OpHashes],
 			logger.Error(errors.New("could not parse request id"), "Invalid request")
 			jsonrpcError(c, -32600, "Invalid Request", "No or invalid 'id' in request", nil)
 			span.SetStatus(codes.Error, "id must be present in request")
-			span.RecordError(err)
+			span.RecordError(errors.New("id must be present in request"))
 			return
 		}
 
 		if data["jsonrpc"] != "2.0" {
 			jsonrpcError(c, -32600, "Invalid Request", "Version of jsonrpc is not 2.0", &id)
 			span.SetStatus(codes.Error, "jsonrpc version must be 2.0")
-			span.RecordError(err)
+			span.RecordError(errors.New("jsonrpc version must be 2.0"))
 			return
 		}
 
 		method, ok := data["method"].(string)
 		if !ok {
 			jsonrpcError(c, -32600, "Invalid Request", "No or invalid 'method' in request", &id)
-			span.SetStatus(codes.Error, "no method in request")
-			span.RecordError(err)
+			span.SetStatus(codes.Error, "no rpc method in request")
+			span.RecordError(errors.New("no rpc method in request"))
 			return
 		}
 

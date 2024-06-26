@@ -7,6 +7,7 @@ import (
 	"math/big"
 	"time"
 
+	"github.com/blndgs/bundler/utils"
 	"github.com/blndgs/model"
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -20,6 +21,8 @@ import (
 	"github.com/stackup-wallet/stackup-bundler/pkg/modules"
 	"github.com/stackup-wallet/stackup-bundler/pkg/signer"
 	"github.com/stackup-wallet/stackup-bundler/pkg/userop"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 )
 
 const (
@@ -89,6 +92,11 @@ func (r *Relayer) SetWaitTimeout(timeout time.Duration) {
 // transaction.
 func (r *Relayer) SendUserOperation() modules.BatchHandlerFunc {
 	return func(ctx *modules.BatchHandlerCtx) error {
+
+		_, span := utils.GetTracer().
+			Start(context.Background(), "SendUserOperation")
+		defer span.End()
+
 		opts := transaction.Opts{
 			EOA:         r.eoa,
 			Eth:         r.eth,
@@ -102,6 +110,14 @@ func (r *Relayer) SendUserOperation() modules.BatchHandlerFunc {
 			GasLimit:    0,
 			WaitTimeout: r.waitTimeout,
 		}
+
+		span.SetAttributes(
+			attribute.String("gas_price", ctx.GasPrice.String()),
+			attribute.String("beneficiary", r.beneficiary.Hex()),
+			attribute.Int64("chain_id", ctx.ChainID.Int64()),
+			attribute.Int64("wait_timeout", int64(r.waitTimeout)),
+		)
+
 		// Estimate gas for handleOps() and drop all userOps that cause unexpected reverts.
 		for len(ctx.Batch) > 0 {
 			est, revert, err := estimateHandleOpsGas(&opts)
@@ -112,6 +128,9 @@ func (r *Relayer) SendUserOperation() modules.BatchHandlerFunc {
 
 				err = fmt.Errorf("failed to estimate gas for handleOps likely not enough gas: %w", err)
 				ctx.MarkOpIndexForRemoval(0, err.Error())
+
+				span.RecordError(err)
+				span.SetStatus(codes.Error, err.Error())
 			} else {
 				opts.GasLimit = est
 				opts.GasPrice = ctx.GasPrice
@@ -124,6 +143,9 @@ func (r *Relayer) SendUserOperation() modules.BatchHandlerFunc {
 		if len(ctx.Batch) > 0 {
 			if txn, err := transaction.HandleOps(&opts); err != nil {
 				r.logger.Error(err, "user ops could not be sent onchain")
+
+				span.RecordError(err)
+				span.SetStatus(codes.Error, err.Error())
 				return err
 			} else {
 				txHash := txn.Hash().String()
