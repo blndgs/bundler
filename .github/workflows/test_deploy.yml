@@ -80,18 +80,27 @@ jobs:
 
       - name: Change task definition
         id: change_task_definition
+        env:
+          VAR_ENV_NAME: ${{ secrets[format('{0}_ENV_NAME', env.PREFIX)] }}
+          VAR_APP_NAME: 'bundler'
+          VAR_IMAGE: ${{ secrets[format('{0}_ECR_URL', env.PREFIX)] }}'/'${{ secrets[format('{0}_AWS_REPOSITORY', env.PREFIX)] }}':'${{ github.sha }}
+          VAR_ERC4337_BUNDLER_ETH_CLIENT_URL: ${{ secrets[format('{0}_ERC4337_BUNDLER_ETH_CLIENT_URL', env.PREFIX)] }}
+          VAR_ERC4337_BUNDLER_PRIVATE_KEY: ${{ secrets[format('{0}_ERC4337_BUNDLER_PRIVATE_KEY', env.PREFIX)] }}
+          VAR_ERC4337_BUNDLER_MAX_BATCH_GAS_LIMIT: ${{ secrets[format('{0}_ERC4337_BUNDLER_MAX_BATCH_GAS_LIMIT', env.PREFIX)] }}
+          VAR_ERC4337_BUNDLER_DEBUG_MODE: ${{ secrets[format('{0}_ERC4337_BUNDLER_DEBUG_MODE', env.PREFIX)] }}
+          VAR_SOLVER_URL: ${{ secrets[format('{0}_SOLVER_URL', env.PREFIX)] }}
+          VAR_AWS_REGION: ${{ secrets[format('{0}_AWS_REGION', env.PREFIX)] }}
         run: |
-          bash -x
           cp -p .github/task-definition.json task-definition.json
-          sed -i 's/ENV_NAME/'${{ secrets[format('{0}_ENV_NAME', env.PREFIX)] }}'/g' task-definition.json
-          sed -i 's/APP_NAME/bundler/g' task-definition.json
-          sed -i 's/IMAGE/'${{ secrets[format('{0}_ECR_URL', env.PREFIX)] }}'/'${{ secrets[format('{0}_AWS_REPOSITORY', env.PREFIX)] }}':'${{ github.sha }}'/g' task-definition.json
-          sed -i 's/VAR_ERC4337_BUNDLER_ETH_CLIENT_URL/'${{ secrets[format('{0}_ERC4337_BUNDLER_ETH_CLIENT_URL', env.PREFIX)] }}'/g' task-definition.json
-          sed -i 's/VAR_ERC4337_BUNDLER_PRIVATE_KEY/'${{ secrets[format('{0}_ERC4337_BUNDLER_PRIVATE_KEY', env.PREFIX)] }}'/g' task-definition.json
-          sed -i 's/VAR_ERC4337_BUNDLER_MAX_BATCH_GAS_LIMIT/'${{ secrets[format('{0}_ERC4337_BUNDLER_MAX_BATCH_GAS_LIMIT', env.PREFIX)] }}'/g' task-definition.json
-          sed -i 's/VAR_ERC4337_BUNDLER_DEBUG_MODE/'${{ secrets[format('{0}_ERC4337_BUNDLER_DEBUG_MODE', env.PREFIX)] }}'/g' task-definition.json
-          sed -i 's/VAR_SOLVER_URL/'${{ secrets[format('{0}_SOLVER_URL', env.PREFIX)] }}'/g' task-definition.json
-          sed -i 's/AWS_REGION/'${{ secrets[format('{0}_AWS_REGION', env.PREFIX)] }}'/g' task-definition.json
+          sed -i 's/ENV_NAME/'${VAR_ENV_NAME}'/g' task-definition.json
+          sed -i 's/APP_NAME/'${VAR_APP_NAME}'/g' task-definition.json
+          sed -i 's/IMAGE/'${VAR_IMAGE}'/g' task-definition.json
+          sed -i 's/VAR_ERC4337_BUNDLER_ETH_CLIENT_URL/'${VAR_ERC4337_BUNDLER_ETH_CLIENT_URL}'/g' task-definition.json
+          sed -i 's/VAR_ERC4337_BUNDLER_PRIVATE_KEY/'${VAR_ERC4337_BUNDLER_PRIVATE_KEY}'/g' task-definition.json
+          sed -i 's/VAR_ERC4337_BUNDLER_MAX_BATCH_GAS_LIMIT/'${VAR_ERC4337_BUNDLER_MAX_BATCH_GAS_LIMIT}'/g' task-definition.json
+          sed -i 's/VAR_ERC4337_BUNDLER_DEBUG_MODE/'${VAR_ERC4337_BUNDLER_DEBUG_MODE}'/g' task-definition.json
+          sed -i 's/VAR_SOLVER_URL/'${VAR_SOLVER_URL}'/g' task-definition.json
+          sed -i 's/AWS_REGION/'${VAR_AWS_REGION}'/g' task-definition.json
 
       - name: Deploy Amazon ECS task definition
         uses: aws-actions/amazon-ecs-deploy-task-definition@v1
