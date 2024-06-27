@@ -99,7 +99,6 @@ jobs:
           VAR_AWS_REGION: ${{ secrets[format('{0}_AWS_REGION', env.PREFIX)] }}
         run: |
           cp -p .github/task-definition.json task-definition.json
-          echo $VAR_ENV_NAME
           sed -i "s+ENV_NAME+${VAR_ENV_NAME}+g" task-definition.json
           sed -i "s+APP_NAME+${VAR_APP_NAME}+g" task-definition.json
           sed -i "s+IMAGE+${VAR_IMAGE}+g" task-definition.json
@@ -109,6 +108,7 @@ jobs:
           sed -i "s+VAR_ERC4337_BUNDLER_DEBUG_MODE+${VAR_ERC4337_BUNDLER_DEBUG_MODE}+g" task-definition.json
           sed -i "s+VAR_SOLVER_URL+${VAR_SOLVER_URL}+g" task-definition.json
           sed -i "s+AWS_REGION+${VAR_AWS_REGION}+g" task-definition.json
+          cat task-definition.json
 
       - name: Deploy Amazon ECS task definition
         uses: aws-actions/amazon-ecs-deploy-task-definition@v1
