@@ -4,7 +4,7 @@ on:
   pull_request:
     types: [opened, reopened, synchronize]
   push:
-    branches: [main, testnet, live, stage]
+    branches: [test_ecs_deploy] #[main, testnet, live, stage]
   workflow_dispatch:
 
 jobs:
