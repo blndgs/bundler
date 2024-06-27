@@ -1,10 +1,10 @@
-name: Deploy to ECR
+name: Deploy to ECS
 
 on:
   pull_request:
     types: [opened, reopened, synchronize]
   push:
-    branches: [test_ecs_deploy]
+    branches: [main, testnet, live, stage]
   workflow_dispatch:
 
 jobs:
@@ -82,12 +82,21 @@ jobs:
         id: change_task_definition
         run: |
           cp -p .github/task-definition.json task-definition.json
-          sed -i 's/ENV_NAME/${{ secrets[format('{0}_ENV_NAME', env.PREFIX)] }}/g' task-definition.json
+          sed -i 's/ENV_NAME/'${{ secrets[format('{0}_ENV_NAME', env.PREFIX)] }}'/g' task-definition.json
           sed -i 's/APP_NAME/bundler/g' task-definition.json
-          sed -i 's/IMAGE/${{ secrets[format('{0}_ECR_URL', env.PREFIX)] }}/${{ secrets[format('{0}_AWS_REPOSITORY', env.PREFIX)] }}:${{ github.sha }}/g' task-definition.json
-          sed -i 's/VAR_ERC4337_BUNDLER_ETH_CLIENT_URL/${{ secrets[format('{0}_ERC4337_BUNDLER_ETH_CLIENT_URL', env.PREFIX)] }}/g' task-definition.json
-          sed -i 's/VAR_ERC4337_BUNDLER_PRIVATE_KEY/${{ secrets[format('{0}_ERC4337_BUNDLER_PRIVATE_KEY', env.PREFIX)] }}/g' task-definition.json
-          sed -i 's/VAR_ERC4337_BUNDLER_MAX_BATCH_GAS_LIMIT/${{ secrets[format('{0}_ERC4337_BUNDLER_MAX_BATCH_GAS_LIMIT', env.PREFIX)] }}/g' task-definition.json
-          sed -i 's/VAR_ERC4337_BUNDLER_DEBUG_MODE/${{ secrets[format('{0}_ERC4337_BUNDLER_DEBUG_MODE', env.PREFIX)] }}/g' task-definition.json
-          sed -i 's/VAR_SOLVER_URL/${{ secrets[format('{0}_SOLVER_URL', env.PREFIX)] }}/g' task-definition.json
-          sed -i 's/AWS_REGION/${{ secrets[format('{0}_AWS_REGION', env.PREFIX)] }}/g' task-definition.json
+          sed -i 's/IMAGE/'${{ secrets[format('{0}_ECR_URL', env.PREFIX)] }}'/'${{ secrets[format('{0}_AWS_REPOSITORY', env.PREFIX)] }}':'${{ github.sha }}'/g' task-definition.json
+          sed -i 's/VAR_ERC4337_BUNDLER_ETH_CLIENT_URL/'${{ secrets[format('{0}_ERC4337_BUNDLER_ETH_CLIENT_URL', env.PREFIX)] }}'/g' task-definition.json
+          sed -i 's/VAR_ERC4337_BUNDLER_PRIVATE_KEY/'${{ secrets[format('{0}_ERC4337_BUNDLER_PRIVATE_KEY', env.PREFIX)] }}'/g' task-definition.json
+          sed -i 's/VAR_ERC4337_BUNDLER_MAX_BATCH_GAS_LIMIT/'${{ secrets[format('{0}_ERC4337_BUNDLER_MAX_BATCH_GAS_LIMIT', env.PREFIX)] }}'/g' task-definition.json
+          sed -i 's/VAR_ERC4337_BUNDLER_DEBUG_MODE/'${{ secrets[format('{0}_ERC4337_BUNDLER_DEBUG_MODE', env.PREFIX)] }}'/g' task-definition.json
+          sed -i 's/VAR_SOLVER_URL/'${{ secrets[format('{0}_SOLVER_URL', env.PREFIX)] }}'/g' task-definition.json
+          sed -i 's/AWS_REGION/'${{ secrets[format('{0}_AWS_REGION', env.PREFIX)] }}'/g' task-definition.json
+
+      - name: Deploy Amazon ECS task definition
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v1
+        with:
+          cluster: ${{ secrets[format('{0}_ENV_NAME', env.PREFIX)] }}-backend
+          service: ${{ secrets[format('{0}_ENV_NAME', env.PREFIX)] }}-bundler
+          task-definition: task-definition.json
+          wait-for-service-stability: false
+          wait-for-minutes: 5
