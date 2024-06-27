@@ -81,6 +81,7 @@ jobs:
       - name: Change task definition
         id: change_task_definition
         run: |
+          bash -x
           cp -p .github/task-definition.json task-definition.json
           sed -i 's/ENV_NAME/'${{ secrets[format('{0}_ENV_NAME', env.PREFIX)] }}'/g' task-definition.json
           sed -i 's/APP_NAME/bundler/g' task-definition.json
