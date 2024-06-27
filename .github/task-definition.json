@@ -38,7 +38,7 @@
       "healthCheck": {
         "command": [
           "CMD-SHELL",
-          "curl -f http://localhost:4337/health_check || exit 1"
+          "curl -f http://localhost:4337/ping || exit 1"
         ],
         "interval": 5,
         "timeout": 5,
