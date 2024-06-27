@@ -78,7 +78,7 @@ jobs:
       - uses: actions/checkout@v2
 
       - name: Change task definition
-        id: env_prefix
+        id: change_task_definition
         run: |
           cp -p .github/task-definition.json task-definition.json
           sed -i 's/ENV_NAME/${{ secrets[format('{0}_ENV_NAME', env.PREFIX)] }}/g' task-definition.json
