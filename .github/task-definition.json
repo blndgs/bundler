@@ -57,8 +57,7 @@
         {
           "containerPort": 4337,
           "hostPort": 4337,
-          "protocol": "tcp",
-          "appProtocol": "http"
+          "protocol": "tcp"
         }
       ]
     }
