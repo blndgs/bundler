@@ -37,7 +37,7 @@
       ],
       "healthCheck": {
         "command": [
-          "sh", "-c",
+          "CMD-SHELL",
           "curl -f http://localhost:4337/ping || exit 1"
         ],
         "interval": 5,
