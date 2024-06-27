@@ -48,7 +48,7 @@
       "logConfiguration": {
         "logDriver": "awslogs",
         "options": {
-          "awslogs-group": "/ecs/ENV_NAME/APP_NAME",
+          "awslogs-group": "/ecs/ENV_NAME/ENV_NAME-APP_NAME",
           "awslogs-region": "AWS_REGION",
           "awslogs-stream-prefix": "ecs"
         }
