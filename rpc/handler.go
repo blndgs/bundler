@@ -25,9 +25,12 @@ import (
 	"github.com/stackup-wallet/stackup-bundler/pkg/client"
 	"github.com/stackup-wallet/stackup-bundler/pkg/jsonrpc"
 	"github.com/stackup-wallet/stackup-bundler/pkg/userop"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 
 	"github.com/blndgs/bundler/conf"
 	"github.com/blndgs/bundler/srv"
+	"github.com/blndgs/bundler/utils"
 )
 
 var bundlerMethods = map[string]bool{
@@ -60,13 +63,22 @@ func ExtERC4337Controller(hashesMap *xsync.MapOf[string, srv.OpHashes],
 	return func(c *gin.Context) {
 		logger = logger.WithValues("method", "ExtERC4337Controller")
 
+		ctx, span := utils.GetTracer().Start(c.Request.Context(), "ExtERC4337Controller")
+		defer span.End()
+
 		if c.Request.Method != http.MethodPost {
 			jsonrpcError(c, -32700, "Parse error", "POST method excepted", nil)
+			err := errors.New("only POST method accepted")
+			span.SetStatus(codes.Error, err.Error())
+			span.RecordError(err)
 			return
 		}
 
 		if c.Request.Body == nil {
 			jsonrpcError(c, -32700, "Parse error", "No POST data", nil)
+			err := errors.New("POST data must be present")
+			span.SetStatus(codes.Error, err.Error())
+			span.RecordError(err)
 			return
 		}
 
@@ -74,6 +86,8 @@ func ExtERC4337Controller(hashesMap *xsync.MapOf[string, srv.OpHashes],
 		if err != nil {
 			logger.Error(err, "could not read HTTP request body")
 			jsonrpcError(c, -32700, "Parse error", "Error while reading request body", nil)
+			span.SetStatus(codes.Error, err.Error())
+			span.RecordError(err)
 			return
 		}
 
@@ -82,6 +96,8 @@ func ExtERC4337Controller(hashesMap *xsync.MapOf[string, srv.OpHashes],
 		if err != nil {
 			logger.Error(err, "could not unmarshal json request body")
 			jsonrpcError(c, -32700, "Parse error", "Error parsing json request", nil)
+			span.SetStatus(codes.Error, err.Error())
+			span.RecordError(err)
 			return
 		}
 
@@ -89,24 +105,30 @@ func ExtERC4337Controller(hashesMap *xsync.MapOf[string, srv.OpHashes],
 		if !ok {
 			logger.Error(errors.New("could not parse request id"), "Invalid request")
 			jsonrpcError(c, -32600, "Invalid Request", "No or invalid 'id' in request", nil)
+			span.SetStatus(codes.Error, "id must be present in request")
+			span.RecordError(errors.New("id must be present in request"))
 			return
 		}
 
 		if data["jsonrpc"] != "2.0" {
 			jsonrpcError(c, -32600, "Invalid Request", "Version of jsonrpc is not 2.0", &id)
+			span.SetStatus(codes.Error, "jsonrpc version must be 2.0")
+			span.RecordError(errors.New("jsonrpc version must be 2.0"))
 			return
 		}
 
 		method, ok := data["method"].(string)
 		if !ok {
 			jsonrpcError(c, -32600, "Invalid Request", "No or invalid 'method' in request", &id)
+			span.SetStatus(codes.Error, "no rpc method in request")
+			span.RecordError(errors.New("no rpc method in request"))
 			return
 		}
 
 		logger.Info("Processing rpc request", "method", method)
 
 		if isStdEthereumRPCMethod(method) || strings.ToLower(method) == ethSendOpMethod {
-			routeStdEthereumRPCRequest(c, rpcAdapter, method, rpcClient, ethRPCClient, hashesMap, data, values, logger)
+			routeStdEthereumRPCRequest(ctx, c, rpcAdapter, method, rpcClient, ethRPCClient, hashesMap, data, values, logger)
 			return
 		}
 
@@ -138,22 +160,31 @@ func isStdEthereumRPCMethod(method string) bool {
 	return !isBundlerMethod
 }
 
-func routeStdEthereumRPCRequest(c *gin.Context, rpcAdapter *client.RpcAdapter, method string,
+func routeStdEthereumRPCRequest(ctx context.Context, c *gin.Context, rpcAdapter *client.RpcAdapter, method string,
 	rpcClient *rpc.Client, ethClient *ethclient.Client, hashesMap *xsync.MapOf[string, srv.OpHashes],
 	requestData map[string]any, values *conf.Values, logger logr.Logger) {
 
+	ctx, span := utils.GetTracer().Start(c.Request.Context(), "routeStdEthereumRPCRequest")
+	defer span.End()
+
+	span.SetAttributes(attribute.String("rpc_method", strings.ToLower(method)))
+
 	switch strings.ToLower(method) {
 	case ethSendOpMethod:
-		handleEthSendUserOperation(c, rpcAdapter, ethClient, hashesMap, requestData, values, logger)
+		handleEthSendUserOperation(ctx, c, rpcAdapter, ethClient, hashesMap, requestData, values, logger)
 	case ethCall:
-		handleEthCallRequest(c, ethClient, requestData, logger)
+		handleEthCallRequest(ctx, c, ethClient, requestData, logger)
 	default:
-		handleEthRequest(c, method, rpcClient, requestData, logger)
+		handleEthRequest(ctx, c, method, rpcClient, requestData, logger)
 	}
 }
 
-func handleEthRequest(c *gin.Context, method string, rpcClient *rpc.Client, requestData map[string]any,
-	logger logr.Logger) {
+func handleEthRequest(ctx context.Context, c *gin.Context, method string, rpcClient *rpc.Client,
+	requestData map[string]any, logger logr.Logger) {
+
+	ctx, span := utils.GetTracer().Start(c.Request.Context(), "handleEthRequest")
+	defer span.End()
+
 	// Extract params and keep them in their original type
 	params, ok := requestData["params"].([]interface{})
 	if !ok {
@@ -163,13 +194,13 @@ func handleEthRequest(c *gin.Context, method string, rpcClient *rpc.Client, requ
 	}
 
 	// Call the method with the parameters
-	raw, err := rpcCall(c, method, rpcClient, params)
+	raw, err := rpcCall(ctx, c, method, rpcClient, params)
 	if err != nil {
 		logger.Error(err, "rpc call failure")
 		return
 	}
 
-	sendRawJson(c, raw, requestData["id"], logger)
+	sendRawJson(ctx, c, raw, requestData["id"], logger)
 }
 
 func jsonrpcError(c *gin.Context, code int, message string, data any, id any) {
@@ -185,18 +216,25 @@ func jsonrpcError(c *gin.Context, code int, message string, data any, id any) {
 	c.Abort()
 }
 
-func rpcCall(c *gin.Context, method string, rpcClient *rpc.Client, params []interface{}) (json.RawMessage, error) {
+func rpcCall(ctx context.Context, c *gin.Context, method string, rpcClient *rpc.Client,
+	params []interface{}) (json.RawMessage, error) {
+
 	var raw json.RawMessage
-	err := rpcClient.CallContext(c, &raw, method, params...)
+	err := rpcClient.CallContext(ctx, &raw, method, params...)
 	if err != nil {
 		jsonrpcError(c, -32603, "Internal error", err.Error(), nil)
 		return nil, err
 	}
+
 	return raw, nil
 }
 
-func sendRawJson(c *gin.Context, raw json.RawMessage, id any,
+func sendRawJson(ctx context.Context, c *gin.Context, raw json.RawMessage, id any,
 	logger logr.Logger) {
+
+	ctx, span := utils.GetTracer().Start(c.Request.Context(), "sendRawJson")
+	defer span.End()
+
 	c.Writer.Header().Set("Content-Type", "application/json")
 	c.Writer.WriteHeader(http.StatusOK)
 
@@ -208,12 +246,19 @@ func sendRawJson(c *gin.Context, raw json.RawMessage, id any,
 	if writeErr != nil {
 		logger.Error(writeErr, "could not write response")
 		// Handle error in writing response
+
+		span.RecordError(writeErr)
+		span.SetStatus(codes.Error, writeErr.Error())
 		jsonrpcError(c, -32603, "Internal error", writeErr.Error(), nil)
 	}
 }
 
-func handleEthCallRequest(c *gin.Context, ethClient *ethclient.Client, requestData map[string]any,
-	logger logr.Logger) {
+func handleEthCallRequest(ctx context.Context, c *gin.Context, ethClient *ethclient.Client,
+	requestData map[string]any, logger logr.Logger) {
+
+	ctx, span := utils.GetTracer().Start(c.Request.Context(), "handleEthCallRequest")
+	defer span.End()
+
 	params := requestData["params"].([]interface{})
 
 	var (
@@ -266,7 +311,12 @@ func handleEthCallRequest(c *gin.Context, ethClient *ethclient.Client, requestDa
 		}
 	}
 
-	result, err := ethClient.CallContract(c, callMsg, blockNumber)
+	span.SetAttributes(
+		attribute.String("to", to),
+		attribute.Int64("block_number", blockNumber.Int64()),
+	)
+
+	result, err := ethClient.CallContract(ctx, callMsg, blockNumber)
 	// The erc-4337 spec has a special case for revert errors, where the revert data is returned as the result
 	const revertErrorKey = "execution reverted"
 	if err != nil && err.Error() == revertErrorKey {
@@ -336,6 +386,23 @@ func waitForUserOpCompletion(ctx context.Context, ethClient *ethclient.Client,
 	txHashes *xsync.MapOf[string, srv.OpHashes],
 	userOpHash common.Hash, waitTimeout time.Duration) (*HashesResponse, error) {
 
+	ctx, span := utils.GetTracer().Start(ctx, "waitForUserOpCompletion")
+	defer span.End()
+
+	opHash := userOpHash.String()
+
+	// Retrieve the transaction hash from sync.Map
+	opHashes, ok := txHashes.Load(opHash)
+	if !ok {
+		return nil, errors.New("userop hash not found")
+	}
+
+	span.SetAttributes(
+		attribute.String("userop_hash", opHash),
+		attribute.Int64("wait_timeout", int64(waitTimeout)),
+		attribute.String("tx_hash", opHashes.Trx.String()),
+	)
+
 	ticker := time.NewTicker(statusCheckTickingInterval)
 	defer ticker.Stop()
 
@@ -346,27 +413,24 @@ func waitForUserOpCompletion(ctx context.Context, ethClient *ethclient.Client,
 		select {
 		case <-ticker.C:
 
-			opHash := userOpHash.String()
-
-			if txHashes, ok := txHashes.Load(opHash); ok { // Retrieve the transaction hash from sync.Map
-
-				receipt, err := ethClient.TransactionReceipt(ctx, txHashes.Trx)
-				if err != nil {
-					if errors.Is(err, ethereum.NotFound) {
-						// Transaction not mined yet, continue waiting
-						continue
-					}
-
-					return nil, fmt.Errorf("hash not found or has been dropped (%s)", opHash)
+			receipt, err := ethClient.TransactionReceipt(ctx, opHashes.Trx)
+			if err != nil {
+				if errors.Is(err, ethereum.NotFound) {
+					// Transaction not mined yet, continue waiting
+					continue
 				}
 
-				return &HashesResponse{
-					Success:      receipt.Status == types.ReceiptStatusSuccessful,
-					OriginalHash: opHash,
-					SolvedHash:   txHashes.Solved,
-					Trx:          txHashes.Trx.String(),
-				}, err
+				return nil, fmt.Errorf("hash not found or has been dropped (%s)", opHash)
 			}
+
+			span.SetAttributes(attribute.String("status", opHashes.Solved))
+
+			return &HashesResponse{
+				Success:      receipt.Status == types.ReceiptStatusSuccessful,
+				OriginalHash: opHash,
+				SolvedHash:   opHashes.Solved,
+				Trx:          opHashes.Trx.String(),
+			}, err
 
 		case <-timeoutCtx.Done():
 			return nil, fmt.Errorf("timeout waiting for user operation completion")
@@ -377,14 +441,19 @@ func waitForUserOpCompletion(ctx context.Context, ethClient *ethclient.Client,
 	}
 }
 
-func handleEthSendUserOperation(c *gin.Context, rpcAdapter *client.RpcAdapter, ethClient *ethclient.Client,
-	hashesMap *xsync.MapOf[string, srv.OpHashes], requestData map[string]any, values *conf.Values,
-	logger logr.Logger) {
+func handleEthSendUserOperation(ctx context.Context, c *gin.Context, rpcAdapter *client.RpcAdapter,
+	ethClient *ethclient.Client, hashesMap *xsync.MapOf[string, srv.OpHashes], requestData map[string]any,
+	values *conf.Values, logger logr.Logger) {
+
+	ctx, span := utils.GetTracer().Start(c.Request.Context(), "handleEthSendUserOperation")
+	defer span.End()
 
 	var op map[string]any
 	if err := mapstructure.Decode(requestData["params"].([]interface{})[0], &op); err != nil {
 		logger.Error(err, "could not decode request params")
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid user operation"})
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		return
 	}
 
@@ -394,6 +463,8 @@ func handleEthSendUserOperation(c *gin.Context, rpcAdapter *client.RpcAdapter, e
 	if err != nil {
 		logger.Error(err, "could not parse userops data structure")
 		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("failed to parse user operation: %s", err)})
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		return
 	}
 
@@ -403,6 +474,8 @@ func handleEthSendUserOperation(c *gin.Context, rpcAdapter *client.RpcAdapter, e
 		if err != nil {
 			logger.Error(err, "failed to parse intent")
 			c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("failed to parse intent: %s", err)})
+			span.RecordError(err)
+			span.SetStatus(codes.Error, err.Error())
 			return
 		}
 	}
@@ -411,13 +484,18 @@ func handleEthSendUserOperation(c *gin.Context, rpcAdapter *client.RpcAdapter, e
 	if err != nil {
 		logger.Error(err, "error while sending userops on onchain")
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		return
 	}
 
-	resp, err := waitForUserOpCompletion(c.Request.Context(), ethClient, hashesMap, common.HexToHash(userOpHash), values.StatusTimeout)
+	resp, err := waitForUserOpCompletion(ctx, ethClient, hashesMap, common.HexToHash(userOpHash),
+		values.StatusTimeout)
 	if err != nil {
 		logger.Error(err, "error while fetching the status of the userops onchain transaction", "userop_hash", userOpHash)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		return
 	}
 
@@ -425,8 +503,10 @@ func handleEthSendUserOperation(c *gin.Context, rpcAdapter *client.RpcAdapter, e
 	if err != nil {
 		logger.Error(err, "error while parsing response from userops response", "userop_hash", userOpHash)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
 		return
 	}
 
-	sendRawJson(c, json.RawMessage(jsonResp), requestData["id"], logger)
+	sendRawJson(ctx, c, json.RawMessage(jsonResp), requestData["id"], logger)
 }
