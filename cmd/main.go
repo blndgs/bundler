@@ -120,6 +120,7 @@ func main() {
 		exp.DropExpired(),
 		batch.SortByNonce(),
 		batch.MaintainGasLimit(values.MaxBatchGasLimit),
+		srv.CheckSenderWhitelist(db, values.WhiteListedAddresses, stdLogger),
 		solver.ValidateIntents(),
 		solver.SolveIntents(),
 		relayer.SendUserOperation(),
