@@ -140,12 +140,7 @@ func (r *Relayer) SendUserOperation() modules.BatchHandlerFunc {
 					var unsolvedOpHash = currentOpHash
 					if mOp.HasIntent() && len(mOp.Signature) > model.KernelSignatureLength {
 						// Restore the userOp to unsolved state
-						intent, err := mOp.GetIntent()
-						if err != nil {
-							r.logger.Error(err, "failed to get intent from userOp: %s", mOp.String())
-							return err
-						}
-						mOp.CallData = []byte(intent.String())
+						mOp.CallData = mOp.Signature[mOp.GetSignatureEndIdx():]
 						mOp.Signature = mOp.GetSignatureValue()
 
 						unsolvedOpHash = mOp.GetUserOpHash(r.ep, r.chainID).String()
