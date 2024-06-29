@@ -4,7 +4,7 @@ on:
   pull_request:
     types: [opened, reopened, synchronize]
   push:
-    branches: [test_ecs_deploy] #[main, testnet, live, stage]
+    branches: [main, testnet, live, stage]
   workflow_dispatch:
 
 jobs:
@@ -36,8 +36,7 @@ jobs:
         run: |
           BRANCH=${{ github.base_ref }}  # This is set for pull requests
           [ -z "$BRANCH" ] && BRANCH=${{ github.ref_name }}  # Fallback to current branch if not a pull request
-          #PREFIX=$(echo $BRANCH | awk -F'-' '{print toupper($1)}')  # Extract prefix and convert to upper case
-          PREFIX=main
+          PREFIX=$(echo $BRANCH | awk -F'-' '{print toupper($1)}')  # Extract prefix and convert to upper case
           echo "PREFIX=$PREFIX" >> $GITHUB_ENV
           echo "PREFIX=$PREFIX"
 
@@ -72,8 +71,7 @@ jobs:
         run: |
           BRANCH=${{ github.base_ref }}  # This is set for pull requests
           [ -z "$BRANCH" ] && BRANCH=${{ github.ref_name }}  # Fallback to current branch if not a pull request
-          #PREFIX=$(echo $BRANCH | awk -F'-' '{print toupper($1)}')  # Extract prefix and convert to upper case
-          PREFIX=main
+          PREFIX=$(echo $BRANCH | awk -F'-' '{print toupper($1)}')  # Extract prefix and convert to upper case
           echo "PREFIX=$PREFIX" >> $GITHUB_ENV
           echo "PREFIX=$PREFIX"
 
