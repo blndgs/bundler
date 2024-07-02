@@ -93,7 +93,7 @@ jobs:
           VAR_ERC4337_BUNDLER_PRIVATE_KEY: ${{ secrets[format('{0}_ERC4337_BUNDLER_PRIVATE_KEY', env.PREFIX)] }}
           VAR_ERC4337_BUNDLER_MAX_BATCH_GAS_LIMIT: ${{ secrets[format('{0}_ERC4337_BUNDLER_MAX_BATCH_GAS_LIMIT', env.PREFIX)] }}
           VAR_ERC4337_BUNDLER_DEBUG_MODE: ${{ secrets[format('{0}_ERC4337_BUNDLER_DEBUG_MODE', env.PREFIX)] }}
-          VAR_SOLVER_URL: ${{ secrets[format('{0}_SOLVER_URL', env.PREFIX)] }}
+          VAR_SOLVER_URL: ${{ secrets[format('{0}_SOLVER_URL_NEW', env.PREFIX)] }}
           VAR_AWS_REGION: ${{ secrets[format('{0}_AWS_REGION', env.PREFIX)] }}
         run: |
           cp -p .github/task-definition.json task-definition.json
