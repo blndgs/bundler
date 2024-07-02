@@ -7,6 +7,7 @@ import (
 	"math/big"
 	"time"
 
+	"github.com/blndgs/bundler/utils"
 	"github.com/blndgs/model"
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -20,6 +21,8 @@ import (
 	"github.com/stackup-wallet/stackup-bundler/pkg/modules"
 	"github.com/stackup-wallet/stackup-bundler/pkg/signer"
 	"github.com/stackup-wallet/stackup-bundler/pkg/userop"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 )
 
 const (
@@ -89,6 +92,11 @@ func (r *Relayer) SetWaitTimeout(timeout time.Duration) {
 // transaction.
 func (r *Relayer) SendUserOperation() modules.BatchHandlerFunc {
 	return func(ctx *modules.BatchHandlerCtx) error {
+
+		_, span := utils.GetTracer().
+			Start(context.Background(), "SendUserOperation")
+		defer span.End()
+
 		opts := transaction.Opts{
 			EOA:         r.eoa,
 			Eth:         r.eth,
@@ -102,14 +110,27 @@ func (r *Relayer) SendUserOperation() modules.BatchHandlerFunc {
 			GasLimit:    0,
 			WaitTimeout: r.waitTimeout,
 		}
+
+		span.SetAttributes(
+			attribute.String("gas_price", ctx.GasPrice.String()),
+			attribute.String("beneficiary", r.beneficiary.Hex()),
+			attribute.Int64("chain_id", ctx.ChainID.Int64()),
+			attribute.Int64("wait_timeout", int64(r.waitTimeout)),
+		)
+
 		// Estimate gas for handleOps() and drop all userOps that cause unexpected reverts.
 		for len(ctx.Batch) > 0 {
 			est, revert, err := estimateHandleOpsGas(&opts)
 			if revert != nil {
 				ctx.MarkOpIndexForRemoval(revert.OpIndex, revert.Reason)
 			} else if err != nil {
+				r.logger.Error(err, "failed to estimate gas for handleOps")
+
 				err = fmt.Errorf("failed to estimate gas for handleOps likely not enough gas: %w", err)
 				ctx.MarkOpIndexForRemoval(0, err.Error())
+
+				span.RecordError(err)
+				span.SetStatus(codes.Error, err.Error())
 			} else {
 				opts.GasLimit = est
 				opts.GasPrice = ctx.GasPrice
@@ -121,6 +142,10 @@ func (r *Relayer) SendUserOperation() modules.BatchHandlerFunc {
 		// caught and dropped in the next iteration.
 		if len(ctx.Batch) > 0 {
 			if txn, err := transaction.HandleOps(&opts); err != nil {
+				r.logger.Error(err, "user ops could not be sent onchain")
+
+				span.RecordError(err)
+				span.SetStatus(codes.Error, err.Error())
 				return err
 			} else {
 				txHash := txn.Hash().String()
@@ -135,10 +160,10 @@ func (r *Relayer) SendUserOperation() modules.BatchHandlerFunc {
 
 					mOp := (model.UserOperation)(*op)
 					var unsolvedOpHash = currentOpHash
-					if mOp.HasIntent() && len(mOp.Signature) > model.SignatureLength {
+					if mOp.HasIntent() && len(mOp.Signature) > model.KernelSignatureLength {
 						// Restore the userOp to unsolved state
-						mOp.CallData = mOp.Signature[model.SignatureLength:]
-						mOp.Signature = mOp.Signature[:model.SignatureLength]
+						mOp.CallData = mOp.Signature[mOp.GetSignatureEndIdx():]
+						mOp.Signature = mOp.GetSignatureValue()
 
 						unsolvedOpHash = mOp.GetUserOpHash(r.ep, r.chainID).String()
 					}

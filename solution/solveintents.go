@@ -21,18 +21,22 @@ import (
 	"math/big"
 	"net/http"
 	"net/url"
-	"os"
 	"time"
 	"unsafe"
 
 	"github.com/blndgs/model"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/go-logr/logr"
 	"github.com/goccy/go-json"
 	"github.com/pkg/errors"
+
+	pb "github.com/blndgs/model/gen/go/proto/v1"
 
 	"github.com/stackup-wallet/stackup-bundler/pkg/modules"
 	"github.com/stackup-wallet/stackup-bundler/pkg/userop"
 )
+
+const httpClientTimeout = 100 * time.Second
 
 // userOpHashID is the hash value of the UserOperation
 type opHashID string
@@ -46,20 +50,22 @@ type batchIntentIndices map[opHashID]batchOpIndex
 type IntentsHandler struct {
 	SolverURL    string
 	SolverClient *http.Client
+	logger       logr.Logger
 }
 
-func New(solverURL string) *IntentsHandler {
-	const httpClientTimeout = 100 * time.Second
-
+func New(solverURL string, logger logr.Logger) *IntentsHandler {
 	return &IntentsHandler{
 		SolverURL:    solverURL,
 		SolverClient: &http.Client{Timeout: httpClientTimeout},
+		logger:       logger,
 	}
 }
 
 // bufferIntentOps caches the index of the userOp in the received batch and creates the UserOperationExt slice for the
 // Solver with cached Hashes and ProcessingStatus set to `Received`.
-func (ei *IntentsHandler) bufferIntentOps(entrypoint common.Address, chainID *big.Int, batchIndices batchIntentIndices, userOpBatch []*model.UserOperation) model.BodyOfUserOps {
+func (ei *IntentsHandler) bufferIntentOps(entrypoint common.Address, chainID *big.Int, batchIndices batchIntentIndices,
+	userOpBatch []*model.UserOperation) model.BodyOfUserOps {
+
 	body := model.BodyOfUserOps{
 		UserOps:    make([]*model.UserOperation, 0, len(userOpBatch)),
 		UserOpsExt: make([]model.UserOperationExt, 0, len(userOpBatch)),
@@ -73,9 +79,9 @@ func (ei *IntentsHandler) bufferIntentOps(entrypoint common.Address, chainID *bi
 			body.UserOps = append(body.UserOps, &clonedOp)
 
 			body.UserOpsExt = append(body.UserOpsExt, model.UserOperationExt{
-				OriginalHashValue: hashID,
 				// Cache hash before it changes
-				ProcessingStatus: model.Received,
+				OriginalHashValue: hashID,
+				ProcessingStatus:  pb.ProcessingStatus_PROCESSING_STATUS_RECEIVED,
 			})
 
 			// Reverse caching
@@ -99,9 +105,9 @@ func (ei *IntentsHandler) SolveIntents() modules.BatchHandlerFunc {
 		// to be sent to the Solver
 		modelUserOps := *(*[]*model.UserOperation)(unsafe.Pointer(&ctx.Batch))
 
-		println("Received batch of UserOperations for solution: ", len(modelUserOps))
+		ei.logger.Info("Received batch of UserOperations for solution", "number", len(modelUserOps))
 		for idx, op := range modelUserOps {
-			println("Received UserOperation: [", idx, "], isIntent", op.HasIntent(), "op:", op.String())
+			ei.logger.Info("Received UserOperation", "index", idx, "isIntent", op.HasIntent(), "operation", op.String())
 		}
 
 		// Prepare the body to send to the Solver
@@ -109,28 +115,29 @@ func (ei *IntentsHandler) SolveIntents() modules.BatchHandlerFunc {
 
 		// Intents to process
 		if len(body.UserOps) == 0 {
-
 			return nil
 		}
 
 		if err := ei.sendToSolver(body); err != nil {
+			ei.logger.Error(err, "communication with solver failed")
 			return err
 		}
 
 		for idx, opExt := range body.UserOpsExt {
 			batchIndex := batchIntentIndices[opHashID(body.UserOpsExt[idx].OriginalHashValue)]
 			// print to stdout the userOp and Intent JSON
-			fmt.Println("Solver response, status:", opExt.ProcessingStatus, ", batchIndex:", batchIndex, ", hash:", body.UserOpsExt[idx].OriginalHashValue)
+			ei.logger.Info("Solver response", "status", opExt.ProcessingStatus,
+				"batchIndex", batchIndex, "hash", body.UserOpsExt[idx].OriginalHashValue)
+
 			switch opExt.ProcessingStatus {
-			case model.Unsolved, model.Expired, model.Invalid, model.Received:
+			case pb.ProcessingStatus_PROCESSING_STATUS_UNSOLVED, pb.ProcessingStatus_PROCESSING_STATUS_EXPIRED,
+				pb.ProcessingStatus_PROCESSING_STATUS_INVALID, pb.ProcessingStatus_PROCESSING_STATUS_RECEIVED:
+
 				// dropping further processing
-				ctx.MarkOpIndexForRemoval(int(batchIndex), string("intent uo not solved:"+opExt.ProcessingStatus))
-				println()
-				println("****************************************************")
-				println("Solver dropping userOp: ", body.UserOps[idx].String(), " with status: ", opExt.ProcessingStatus)
-				println("****************************************************")
-				println()
-			case model.Solved:
+				ctx.MarkOpIndexForRemoval(int(batchIndex), string("intent uo not solved:"+opExt.ProcessingStatus.String()))
+				ei.logger.Info("Solver dropping ops", "status", opExt.ProcessingStatus, "body", body.UserOps[idx].String())
+
+			case pb.ProcessingStatus_PROCESSING_STATUS_SOLVED:
 				// copy the solved userOp values to the received batch's userOp values
 				ctx.Batch[batchIndex].CallData = make([]byte, len(body.UserOps[idx].CallData))
 				copy(ctx.Batch[batchIndex].CallData, body.UserOps[idx].CallData)
@@ -143,7 +150,10 @@ func (ei *IntentsHandler) SolveIntents() modules.BatchHandlerFunc {
 				ctx.Batch[batchIndex].MaxPriorityFeePerGas.Set(body.UserOps[idx].MaxPriorityFeePerGas)
 
 			default:
-				return errors.Errorf("unknown processing status: %s", opExt.ProcessingStatus)
+				err := errors.Errorf("unknown processing status: %s", opExt.ProcessingStatus)
+
+				ei.logger.Error(err, "unknown processing status")
+				return err
 			}
 		}
 
@@ -151,10 +161,10 @@ func (ei *IntentsHandler) SolveIntents() modules.BatchHandlerFunc {
 	}
 }
 
-func ReportSolverHealth(solverURL string) error {
+func ReportSolverHealth(solverURL string, logger logr.Logger) error {
 	parsedURL, err := url.Parse(solverURL)
 	if err != nil {
-		println("Error parsing Solver URL: ", solverURL, ", ", err)
+		logger.Error(err, "solver url is invalid", "url", solverURL)
 		return err
 	}
 
@@ -163,9 +173,10 @@ func ReportSolverHealth(solverURL string) error {
 	parsedURL.Fragment = ""
 
 	solverURL = parsedURL.String()
-	fmt.Println("Requesting solver health at ", solverURL)
 
-	handler := New(solverURL)
+	logger.Info("Requesting solver health", "url", solverURL)
+
+	handler := New(solverURL, logger)
 
 	req, err := http.NewRequest(http.MethodGet, solverURL, nil)
 	if err != nil {
@@ -182,9 +193,10 @@ func ReportSolverHealth(solverURL string) error {
 		return fmt.Errorf("solver health check returned non-OK status: %s", resp.Status)
 	}
 
-	fmt.Println("Solver health response: ", resp.Status)
-	_, err = io.Copy(os.Stdout, resp.Body)
+	logger.Info("Solver health check done", "status", resp.Status)
+	_, err = io.Copy(io.Discard, resp.Body)
 	if err != nil {
+		logger.Error(err, "could not copy response status")
 		return err
 	}
 
@@ -207,10 +219,9 @@ func (ei *IntentsHandler) sendToSolver(body model.BodyOfUserOps) error {
 
 	resp, err := ei.SolverClient.Do(req)
 	if err != nil {
-		println("Solver request failed at URL: ", ei.SolverURL)
-		println("Solver error: ", err)
 		return err
 	}
+
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
