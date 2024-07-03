@@ -15,6 +15,10 @@ func getWhitelistKey(addr common.Address) string {
 	return fmt.Sprintf("bundler-whitelist-%s", addr.Hex())
 }
 
+// CheckSenderWhitelist is an handler that checks to limit on-chain userops to a set of
+// addresses. These addresses must be initialized on start up and they must be a comma seperated list
+// ERC4337_BUNDLER_ADDRESS_WHITELIST=0xAddress1,0xAddress2
+// If not provided, this middleware will always act as a no-op
 func CheckSenderWhitelist(db *badger.DB,
 	whitelistedAddresses []common.Address,
 	logger logr.Logger) modules.BatchHandlerFunc {
