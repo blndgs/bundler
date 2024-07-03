@@ -34,13 +34,13 @@ func NewRPCServer(values *conf.Values, logger logr.Logger, relayer *srv.Relayer,
 
 	if values.OTELIsEnabled {
 		teardown = initOTELCapabilities(&options{
-			ServiceName:  values.OTELServiceName,
+			ServiceName:  values.ServiceName,
 			CollectorUrl: values.OTELCollectorEndpoint,
 			InsecureMode: true,
 			ChainID:      chainID,
 			Address:      common.HexToAddress(values.Beneficiary),
 		}, logger)
-		r.Use(otelgin.Middleware(values.OTELServiceName))
+		r.Use(otelgin.Middleware(values.ServiceName))
 	}
 
 	r.Use(
