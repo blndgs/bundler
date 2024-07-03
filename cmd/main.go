@@ -116,11 +116,18 @@ func main() {
 
 	check := validator.ToStandaloneCheck()
 
+	whitelistHandler := srv.CheckSenderWhitelist(db, values.WhiteListedAddresses, stdLogger)
+
+	if whitelistHandler == nil {
+		stdLogger.Info("could not set up sender whitelist middleware")
+		os.Exit(1)
+	}
+
 	bundlerClient.UseModules(
 		exp.DropExpired(),
 		batch.SortByNonce(),
+		whitelistHandler,
 		batch.MaintainGasLimit(values.MaxBatchGasLimit),
-		srv.CheckSenderWhitelist(db, values.WhiteListedAddresses, stdLogger),
 		solver.ValidateIntents(),
 		solver.SolveIntents(),
 		relayer.SendUserOperation(),

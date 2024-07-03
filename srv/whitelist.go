@@ -15,10 +15,12 @@ func getWhitelistKey(addr common.Address) string {
 	return fmt.Sprintf("bundler-whitelist-%s", addr.Hex())
 }
 
-func CheckSenderWhitelist(db *badger.DB, 
-whitelistedAddresses []common.Address, 
-logger logr.Logger) modules.BatchHandlerFunc {
+func CheckSenderWhitelist(db *badger.DB,
+	whitelistedAddresses []common.Address,
+	logger logr.Logger) modules.BatchHandlerFunc {
+
 	logger.Info("Setting up addresses in BadgerDB for whitelist checks")
+
 	if len(whitelistedAddresses) > 0 {
 		logger.Info("Bundler address whitelisting enabled", "number_of_whitelisted_addresses", len(whitelistedAddresses))
 	}
@@ -30,6 +32,7 @@ logger logr.Logger) modules.BatchHandlerFunc {
 				logger.Error(err, "Failed to store address in DB for whitelisting", "address", addr.Hex())
 				return err
 			}
+
 			logger.Info("Address stored in DB whitelist", "address", addr.Hex())
 		}
 		return nil
@@ -47,7 +50,7 @@ logger logr.Logger) modules.BatchHandlerFunc {
 		defer span.End()
 
 		if len(whitelistedAddresses) == 0 {
-			logger.Info("Address whitelisting not enabled. Skipping middleware.")
+			logger.Info("Address whitelisting not enabled. Skipping handler")
 			return nil
 		}
 
