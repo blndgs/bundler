@@ -35,7 +35,7 @@ func NewRPCServer(values *conf.Values, logger logr.Logger, relayer *srv.Relayer,
 	if values.OTELIsEnabled {
 		teardown = initTracer(&options{
 			ServiceName:  values.OTELServiceName,
-			CollectorUrl: values.OTELCollectorUrl,
+			CollectorUrl: values.OTELCollectorEndpoint,
 			InsecureMode: true,
 			ChainID:      chainID,
 			Address:      common.HexToAddress(values.Beneficiary),

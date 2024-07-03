@@ -43,11 +43,6 @@ type Values struct {
 	EthBuilderUrls               []string
 	BlocksInTheFuture            int
 	StatusTimeout                time.Duration
-	OTELIsEnabled                bool
-	OTELServiceName              string
-	OTELCollectorHeaders         map[string]string
-	OTELCollectorUrl             string
-	OTELInsecureMode             bool
 	AltMempoolIPFSGateway        string
 	AltMempoolIds                []string
 	IsOpStackNetwork             bool
@@ -55,6 +50,11 @@ type Values struct {
 	DebugMode                    bool
 	GinMode                      string
 	SolverURL                    string
+	OTELIsEnabled                bool
+	OTELServiceName              string
+	OTELCollectorHeaders         map[string]string
+	OTELCollectorEndpoint        string
+	OTELInsecureMode             bool
 }
 
 func variableNotSetOrIsNil(env string) bool {
@@ -239,7 +239,7 @@ func GetValues() *Values {
 		OTELIsEnabled:                otelIsEnabled,
 		OTELServiceName:              otelServiceName,
 		OTELCollectorHeaders:         otelCollectorHeader,
-		OTELCollectorUrl:             otelCollectorUrl,
+		OTELCollectorEndpoint:        otelCollectorUrl,
 		OTELInsecureMode:             otelInsecureMode,
 		AltMempoolIPFSGateway:        altMempoolIPFSGateway,
 		AltMempoolIds:                altMempoolIds,
