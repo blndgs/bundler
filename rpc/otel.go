@@ -2,21 +2,24 @@ package rpc
 
 import (
 	"context"
-	"log"
+	"errors"
 	"math/big"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/go-logr/logr"
+	"go.opentelemetry.io/contrib/instrumentation/runtime"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
-	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc"
+	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace"
-	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
 	"go.opentelemetry.io/otel/propagation"
-	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
+	"go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
-	"google.golang.org/grpc/credentials"
 )
 
 type options struct {
@@ -30,13 +33,15 @@ type options struct {
 	Address common.Address
 }
 
-func initResources(opts *options) *resource.Resource {
+func initResources(opts *options, logger logr.Logger) *resource.Resource {
 	if opts.ChainID == nil {
-		log.Fatal("please provide a valid chain ID")
+		logger.Error(errors.New("please provide a valid chain ID"), "")
+		os.Exit(1)
 	}
 
 	if opts.Address.Hex() == "" {
-		log.Fatal("please provide a valid bundler address")
+		logger.Error(errors.New("please provide a valid bundler address"), "")
+		os.Exit(1)
 	}
 
 	resources, err := resource.New(
@@ -49,69 +54,111 @@ func initResources(opts *options) *resource.Resource {
 		),
 	)
 	if err != nil {
-		log.Fatal(err)
+		logger.Error(err, "could not set up resources")
+		os.Exit(1)
 	}
 
 	return resources
 }
 
-func initTracer(opts *options) func() {
-	secureOption := otlptracegrpc.WithTLSCredentials(credentials.NewClientTLSFromCert(nil, ""))
-	if opts.InsecureMode {
-		secureOption = otlptracegrpc.WithInsecure()
+func initOTELCapabilities(cfg *options, logger logr.Logger) func() {
+
+	otel.SetTextMapPropagator(
+		propagation.NewCompositeTextMapPropagator(
+			propagation.TraceContext{},
+			propagation.Baggage{}),
+	)
+
+	resources := initResources(cfg, logger)
+
+	var (
+		tracesSuffixEndpoint  = "/v1/traces"
+		metricsSuffixEndpoint = "/v1/metrics"
+	)
+
+	// By default, Otel sends traces and metrics, logs to v1/* paths
+	// but some providers like Grafana have their OTEL collector on a subpath
+	// so /otlp/v1/*
+	// The sdk is pretty stringent as that format does not match the standard
+	// so it doesn't accept, this makes sure to split out the url and make it match
+	splittedEndpoint := strings.Split(cfg.CollectorUrl, "/")
+
+	if len(splittedEndpoint) == 2 {
+		// pick out the host
+		cfg.CollectorUrl = splittedEndpoint[0]
+
+		// make sure to use the remaining path and prepend to the actual
+		// standard /v1 paths
+		tracesSuffixEndpoint = splittedEndpoint[1] + tracesSuffixEndpoint
+		metricsSuffixEndpoint = splittedEndpoint[1] + metricsSuffixEndpoint
 	}
 
-	exporter, err := otlptrace.New(
+	var traceOptions = []otlptracehttp.Option{
+		otlptracehttp.WithEndpoint(cfg.CollectorUrl),
+		otlptracehttp.WithURLPath(tracesSuffixEndpoint),
+		otlptracehttp.WithHeaders(cfg.CollectorHeader),
+	}
+
+	if cfg.InsecureMode {
+		traceOptions = append(traceOptions, otlptracehttp.WithInsecure())
+	}
+
+	traceExporter, err := otlptrace.New(
 		context.Background(),
-		otlptracegrpc.NewClient(
-			secureOption,
-			otlptracegrpc.WithHeaders(opts.CollectorHeader),
-			otlptracegrpc.WithEndpoint(opts.CollectorUrl),
-		),
-	)
+		otlptracehttp.NewClient(traceOptions...))
+
 	if err != nil {
-		log.Fatal(err)
+		logger.Error(err, "could not setup OTEL tracing")
+		os.Exit(1)
 	}
 
 	otel.SetTracerProvider(
 		sdktrace.NewTracerProvider(
 			sdktrace.WithSampler(sdktrace.AlwaysSample()),
-			sdktrace.WithBatcher(exporter),
-			sdktrace.WithResource(initResources(opts)),
+			sdktrace.WithBatcher(traceExporter,
+				sdktrace.WithMaxExportBatchSize(sdktrace.DefaultMaxExportBatchSize),
+				sdktrace.WithBatchTimeout(5*time.Second),
+			),
+			sdktrace.WithResource(resources),
 		),
 	)
-	propagator := propagation.NewCompositeTextMapPropagator(propagation.TraceContext{}, propagation.Baggage{})
-	otel.SetTextMapPropagator(propagator)
-	return func() {
-		_ = exporter.Shutdown(context.Background())
-	}
-}
 
-func initMetrics(opts *options) func() {
-	secureOption := otlpmetricgrpc.WithTLSCredentials(credentials.NewClientTLSFromCert(nil, ""))
-	if opts.InsecureMode {
-		secureOption = otlpmetricgrpc.WithInsecure()
+	var metricsOptions = []otlpmetrichttp.Option{
+		otlpmetrichttp.WithEndpoint(cfg.CollectorUrl),
+		otlpmetrichttp.WithURLPath(metricsSuffixEndpoint),
+		otlpmetrichttp.WithHeaders(cfg.CollectorHeader),
 	}
 
-	exporter, err := otlpmetricgrpc.New(
-		context.Background(),
-		secureOption,
-		otlpmetricgrpc.WithHeaders(opts.CollectorHeader),
-		otlpmetricgrpc.WithEndpoint(opts.CollectorUrl),
-	)
+	if cfg.InsecureMode {
+		metricsOptions = append(metricsOptions, otlpmetrichttp.WithInsecure())
+	}
+
+	metricExporter, err := otlpmetrichttp.New(
+		context.Background(), metricsOptions...)
 	if err != nil {
-		log.Fatal(err)
+		logger.Error(err, "could not setup OTEL metris")
+		os.Exit(1)
 	}
 
 	otel.SetMeterProvider(
-		sdkmetric.NewMeterProvider(
-			sdkmetric.WithResource(initResources(opts)),
-			sdkmetric.WithReader(
-				sdkmetric.NewPeriodicReader(exporter, sdkmetric.WithInterval(30*time.Second)),
-			),
-		),
-	)
+		metric.NewMeterProvider(
+			metric.WithResource(resources),
+			metric.WithReader(
+				metric.NewPeriodicReader(metricExporter))))
+
+	regiterMetrics(logger)
+
 	return func() {
-		_ = exporter.Shutdown(context.Background())
+		_ = traceExporter.Shutdown(context.Background())
+		_ = metricExporter.Shutdown(context.Background())
+	}
+}
+
+func regiterMetrics(logger logr.Logger) {
+
+	err := runtime.Start(runtime.WithMinimumReadMemStatsInterval(time.Second))
+	if err != nil {
+		logger.Error(err, "could not gather runtime metrics")
+		os.Exit(1)
 	}
 }

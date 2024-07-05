@@ -15,15 +15,14 @@ import (
 )
 
 const (
-	CollectorTracer           = "bundlerCollectorTracer"
-	ExecutorTracer            = "bundlerExecutorTracer"
-	DefaultBundlerServiceName = "bundler"
-	DataDir                   = "/tmp/balloondogs_db"
-	EntrypointAddrV060        = "0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789"
-	OpLookupLimit             = 2000
-	MaxBatchGasLimit          = 12000000
-	MaxVerificationGas        = 6000000
-	MaxTTLSeconds             = 180
+	CollectorTracer    = "bundlerCollectorTracer"
+	ExecutorTracer     = "bundlerExecutorTracer"
+	DataDir            = "/tmp/balloondogs_db"
+	EntrypointAddrV060 = "0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789"
+	OpLookupLimit      = 2000
+	MaxBatchGasLimit   = 12000000
+	MaxVerificationGas = 6000000
+	MaxTTLSeconds      = 180
 )
 
 type Values struct {
@@ -43,11 +42,6 @@ type Values struct {
 	EthBuilderUrls               []string
 	BlocksInTheFuture            int
 	StatusTimeout                time.Duration
-	OTELIsEnabled                bool
-	OTELServiceName              string
-	OTELCollectorHeaders         map[string]string
-	OTELCollectorUrl             string
-	OTELInsecureMode             bool
 	AltMempoolIPFSGateway        string
 	AltMempoolIds                []string
 	IsOpStackNetwork             bool
@@ -56,7 +50,12 @@ type Values struct {
 	GinMode                      string
 	SolverURL                    string
 	// If empty, all addresses will be accepted
-	WhiteListedAddresses []common.Address
+	WhiteListedAddresses  []common.Address
+	ServiceName           string
+	OTELIsEnabled         bool
+	OTELCollectorHeaders  map[string]string
+	OTELCollectorEndpoint string
+	OTELInsecureMode      bool
 }
 
 func variableNotSetOrIsNil(env string) bool {
@@ -141,7 +140,7 @@ func GetValues() *Values {
 	_ = viper.BindEnv("erc4337_bundler_eth_builder_urls")
 	_ = viper.BindEnv("erc4337_bundler_blocks_in_the_future")
 	_ = viper.BindEnv("erc4337_bundler_otel_is_enabled")
-	_ = viper.BindEnv("erc4337_bundler_otel_service_name")
+	_ = viper.BindEnv("erc4337_bundler_service_name")
 	_ = viper.BindEnv("erc4337_bundler_otel_collector_headers")
 	_ = viper.BindEnv("erc4337_bundler_otel_collector_url")
 	_ = viper.BindEnv("erc4337_bundler_otel_insecure_mode")
@@ -179,12 +178,6 @@ func GetValues() *Values {
 		}
 	}
 
-	// Validate O11Y variables
-	if viper.IsSet("erc4337_bundler_otel_service_name") &&
-		variableNotSetOrIsNil("erc4337_bundler_otel_collector_url") {
-		panic("Fatal config error: erc4337_bundler_otel_service_name is set without a collector URL")
-	}
-
 	// Validate Alternative mempool variables
 	if viper.IsSet("erc4337_bundler_alt_mempool_ids") &&
 		variableNotSetOrIsNil("erc4337_bundler_alt_mempool_ipfs_gateway") {
@@ -211,7 +204,7 @@ func GetValues() *Values {
 	ethBuilderUrls := envArrayToStringSlice(viper.GetString("erc4337_bundler_eth_builder_urls"))
 	blocksInTheFuture := viper.GetInt("erc4337_bundler_blocks_in_the_future")
 	otelIsEnabled := viper.GetBool("erc4337_bundler_otel_is_enabled")
-	otelServiceName := viper.GetString("erc4337_bundler_otel_service_name")
+	serviceName := viper.GetString("erc4337_bundler_service_name")
 	otelCollectorHeader := envKeyValStringToMap(viper.GetString("erc4337_bundler_otel_collector_headers"))
 	otelCollectorUrl := viper.GetString("erc4337_bundler_otel_collector_url")
 	otelInsecureMode := viper.GetBool("erc4337_bundler_otel_insecure_mode")
@@ -242,9 +235,9 @@ func GetValues() *Values {
 		EthBuilderUrls:               ethBuilderUrls,
 		BlocksInTheFuture:            blocksInTheFuture,
 		OTELIsEnabled:                otelIsEnabled,
-		OTELServiceName:              otelServiceName,
+		ServiceName:                  serviceName,
 		OTELCollectorHeaders:         otelCollectorHeader,
-		OTELCollectorUrl:             otelCollectorUrl,
+		OTELCollectorEndpoint:        otelCollectorUrl,
 		OTELInsecureMode:             otelInsecureMode,
 		AltMempoolIPFSGateway:        altMempoolIPFSGateway,
 		AltMempoolIds:                altMempoolIds,

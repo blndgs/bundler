@@ -7,6 +7,7 @@ import (
 	"math/big"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -37,6 +38,10 @@ import (
 
 func main() {
 	values := conf.GetValues()
+
+	if strings.TrimSpace(values.ServiceName) == "" {
+		log.Fatal("please provide a valid service name")
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
