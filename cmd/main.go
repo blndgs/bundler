@@ -129,9 +129,9 @@ func main() {
 	}
 
 	bundlerClient.UseModules(
+		whitelistHandler,
 		exp.DropExpired(),
 		batch.SortByNonce(),
-		whitelistHandler,
 		batch.MaintainGasLimit(values.MaxBatchGasLimit),
 		solver.ValidateIntents(),
 		solver.SolveIntents(),

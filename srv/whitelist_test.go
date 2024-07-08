@@ -14,7 +14,7 @@ import (
 
 func TestCheckSenderWhitelist(t *testing.T) {
 
-	db, err := badger.Open(badger.DefaultOptions("testdata/test.db"))
+	db, err := badger.Open(badger.DefaultOptions("testdata/test.db").WithInMemory(true))
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -38,7 +38,7 @@ func TestCheckSenderWhitelist(t *testing.T) {
 
 func TestCheckSenderWhitelist_AddressNotWhitelisted(t *testing.T) {
 
-	db, err := badger.Open(badger.DefaultOptions("testdata/test.db"))
+	db, err := badger.Open(badger.DefaultOptions("testdata/test.db").WithInMemory(true))
 	if err != nil {
 		log.Fatal(err)
 	}

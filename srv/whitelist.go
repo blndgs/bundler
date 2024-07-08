@@ -12,7 +12,7 @@ import (
 )
 
 func getWhitelistKey(addr common.Address) string {
-	return fmt.Sprintf("bundler-whitelist-%s", addr.Hex())
+	return fmt.Sprintf("whitelist-%s", addr.Hex())
 }
 
 // CheckSenderWhitelist is an handler that checks to limit on-chain userops to a set of
@@ -58,17 +58,18 @@ func CheckSenderWhitelist(db *badger.DB,
 			return nil
 		}
 
-		for _, userop := range ctx.Batch {
+		for idx, userop := range ctx.Batch {
 			senderKey := getWhitelistKey(userop.Sender)
 			err := db.View(func(txn *badger.Txn) error {
 				_, err := txn.Get([]byte(senderKey))
 				return err
 			})
 			if err != nil {
-				logger.Error(err, "Sender not found in whitelist; cannot execute transaction", "address", userop.Sender.Hex())
-				return err
+				logger.Error(err, "Sender not found in whitelist; removing transaction from batch", "address", userop.Sender.Hex())
+				ctx.Batch = append(ctx.Batch[:idx], ctx.Batch[idx+1:]...)
 			}
 		}
+
 		return nil
 	}
 }
