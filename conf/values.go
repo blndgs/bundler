@@ -267,7 +267,7 @@ func NewReputationConstantsFromEnv() *entities.ReputationConstants {
 }
 
 func strToAddrs(s []string) []common.Address {
-	a := make([]common.Address, len(s))
+	a := make([]common.Address, 0, len(s))
 
 	for _, v := range s {
 		a = append(a, common.HexToAddress(v))
