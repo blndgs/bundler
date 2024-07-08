@@ -10,6 +10,7 @@ import (
 	"github.com/blndgs/model"
 	"github.com/goccy/go-json"
 	"github.com/stackup-wallet/stackup-bundler/pkg/modules"
+	"golang.org/x/sync/errgroup"
 )
 
 // ValidateIntents returns a BatchHandlerFunc that will
@@ -47,28 +48,40 @@ func (ei *IntentsHandler) sendToSolverForValidation(body model.BodyOfUserOps) er
 
 	solverURL := parsedURL.String()
 
-	jsonBody, err := json.Marshal(body)
-	if err != nil {
+	var g errgroup.Group
+
+	for _, op := range body.UserOps {
+		g.Go(func() error {
+			jsonBody, err := json.Marshal(op)
+			if err != nil {
+				return err
+			}
+
+			req, err := http.NewRequest(http.MethodPost, solverURL, bytes.NewBuffer(jsonBody))
+			if err != nil {
+				return err
+			}
+
+			req.Header.Set("Content-Type", "application/json")
+
+			resp, err := ei.SolverClient.Do(req)
+			if err != nil {
+				return err
+			}
+
+			defer resp.Body.Close()
+
+			if resp.StatusCode != http.StatusOK {
+				return fmt.Errorf("solver returned non-OK status: %s", resp.Status)
+			}
+
+			return json.NewDecoder(resp.Body).Decode(&body)
+		})
+	}
+
+	if err := g.Wait(); err != nil {
 		return err
 	}
 
-	req, err := http.NewRequest(http.MethodPost, solverURL, bytes.NewBuffer(jsonBody))
-	if err != nil {
-		return err
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := ei.SolverClient.Do(req)
-	if err != nil {
-		return err
-	}
-
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("solver returned non-OK status: %s", resp.Status)
-	}
-
-	return json.NewDecoder(resp.Body).Decode(&body)
+	return nil
 }
