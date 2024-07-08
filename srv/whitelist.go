@@ -19,9 +19,13 @@ func getWhitelistKey(addr common.Address) string {
 // addresses. These addresses must be initialized on start up and they must be a comma seperated list
 // ERC4337_BUNDLER_ADDRESS_WHITELIST=0xAddress1,0xAddress2
 // If not provided, this middleware will always act as a no-op
+//
+// It also returns a function that acts as a clean up operation
+// We do not want to persist whitelisted addresses between restarts
+// They must always come fresh from the env variable
 func CheckSenderWhitelist(db *badger.DB,
 	whitelistedAddresses []common.Address,
-	logger logr.Logger) modules.BatchHandlerFunc {
+	logger logr.Logger) (modules.BatchHandlerFunc, func() error) {
 
 	logger.Info("Setting up addresses in BadgerDB for whitelist checks")
 
@@ -44,32 +48,43 @@ func CheckSenderWhitelist(db *badger.DB,
 
 	if err != nil {
 		logger.Error(err, "Failed to store multiple addresses in BadgerDB")
-		return nil
+		return nil, func() error { return nil }
 	}
 
 	return func(ctx *modules.BatchHandlerCtx) error {
 
-		_, span := utils.GetTracer().
-			Start(context.Background(), "WithAdressWhitelist")
-		defer span.End()
+			_, span := utils.GetTracer().
+				Start(context.Background(), "WithAdressWhitelist")
+			defer span.End()
 
-		if len(whitelistedAddresses) == 0 {
-			logger.Info("Address whitelisting not enabled. Skipping handler")
-			return nil
-		}
-
-		for idx, userop := range ctx.Batch {
-			senderKey := getWhitelistKey(userop.Sender)
-			err := db.View(func(txn *badger.Txn) error {
-				_, err := txn.Get([]byte(senderKey))
-				return err
-			})
-			if err != nil {
-				logger.Error(err, "Sender not found in whitelist; removing transaction from batch", "address", userop.Sender.Hex())
-				ctx.Batch = append(ctx.Batch[:idx], ctx.Batch[idx+1:]...)
+			if len(whitelistedAddresses) == 0 {
+				logger.Info("Address whitelisting not enabled. Skipping handler")
+				return nil
 			}
-		}
 
-		return nil
-	}
+			for idx, userop := range ctx.Batch {
+				senderKey := getWhitelistKey(userop.Sender)
+				err := db.View(func(txn *badger.Txn) error {
+					_, err := txn.Get([]byte(senderKey))
+					return err
+				})
+				if err != nil {
+					logger.Error(err, "Sender not found in whitelist; removing transaction from batch", "address", userop.Sender.Hex())
+					ctx.Batch = append(ctx.Batch[:idx], ctx.Batch[idx+1:]...)
+				}
+			}
+
+			return nil
+		}, func() error {
+
+			return db.Update(func(txn *badger.Txn) error {
+				for _, addr := range whitelistedAddresses {
+					if err := txn.Delete([]byte(getWhitelistKey(addr))); err != nil {
+						logger.Error(err, "Failed to delete address in DB for whitelisting", "address", addr.Hex())
+						return err
+					}
+				}
+				return nil
+			})
+		}
 }

@@ -121,7 +121,7 @@ func main() {
 
 	check := validator.ToStandaloneCheck()
 
-	whitelistHandler := srv.CheckSenderWhitelist(db, values.WhiteListedAddresses, stdLogger)
+	whitelistHandler, whitelistCleanupFn := srv.CheckSenderWhitelist(db, values.WhiteListedAddresses, stdLogger)
 
 	if whitelistHandler == nil {
 		stdLogger.Info("could not set up sender whitelist middleware")
@@ -161,6 +161,7 @@ func main() {
 	// Wait for the context to be canceled
 	<-ctx.Done()
 	log.Println("Shutting down...")
+	whitelistCleanupFn()
 }
 
 func createERC4337Client(mem *mempool.Mempool, values *conf.Values, chainID *big.Int,
