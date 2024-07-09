@@ -1,0 +1,81 @@
+{
+  "family": "ENV_NAME-APP_NAME-family",
+  "requiresCompatibilities": [
+    "FARGATE"
+  ],
+  "taskRoleArn": "arn:aws:iam::791410722728:role/ecsTaskExecutionRole_ENV_NAME-backend",
+  "executionRoleArn": "arn:aws:iam::791410722728:role/ecsTaskExecutionRole_ENV_NAME-backend",
+  "networkMode": "awsvpc",
+  "cpu": "256",
+  "memory": "512",
+  "containerDefinitions": [
+    {
+      "name": "APP_NAME",
+      "image": "IMAGE",
+      "essential": true,
+      "environment": [
+        {
+          "name": "ERC4337_BUNDLER_ETH_CLIENT_URL",
+          "value": "VAR_ERC4337_BUNDLER_ETH_CLIENT_URL"
+        },
+        {
+          "name": "ERC4337_BUNDLER_PRIVATE_KEY",
+          "value": "VAR_ERC4337_BUNDLER_PRIVATE_KEY"
+        },
+        {
+          "name": "ERC4337_BUNDLER_MAX_BATCH_GAS_LIMIT",
+          "value": "VAR_ERC4337_BUNDLER_MAX_BATCH_GAS_LIMIT"
+        },
+        {
+          "name": "ERC4337_BUNDLER_DEBUG_MODE",
+          "value": "VAR_ERC4337_BUNDLER_DEBUG_MODE"
+        },
+        {
+          "name": "SOLVER_URL",
+          "value": "VAR_SOLVER_URL"
+        },
+        {
+          "name": "ERC4337_BUNDLER_OTEL_IS_ENABLED",
+          "value": "VAR_ERC4337_BUNDLER_OTEL_IS_ENABLED"
+        },
+        {
+          "name": "ERC4337_BUNDLER_OTEL_COLLECTOR_URL",
+          "value": "VAR_ERC4337_BUNDLER_OTEL_COLLECTOR_URL"
+        },
+        {
+          "name": "ERC4337_BUNDLER_OTEL_COLLECTOR_HEADERS",
+          "value": "VAR_ERC4337_BUNDLER_OTEL_COLLECTOR_HEADERS"
+        },
+        {
+          "name": "ERC4337_BUNDLER_SERVICE_NAME",
+          "value": "VAR_ERC4337_BUNDLER_SERVICE_NAME"
+        }
+      ],
+      "healthCheck": {
+        "command": [
+          "CMD-SHELL",
+          "curl -f http://localhost:4337/ping || exit 1"
+        ],
+        "interval": 5,
+        "timeout": 30,
+        "retries": 5,
+        "startPeriod": 30
+      },
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/ENV_NAME/ENV_NAME-APP_NAME",
+          "awslogs-region": "AWS_REGION",
+          "awslogs-stream-prefix": "ecs"
+        }
+      },
+      "portMappings": [
+        {
+          "containerPort": 4337,
+          "hostPort": 4337,
+          "protocol": "tcp"
+        }
+      ]
+    }
+  ]
+}
