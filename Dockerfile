@@ -20,13 +20,8 @@ RUN go build -v -o bundler cmd/main.go
 # https://docs.docker.com/develop/develop-images/multistage-build/#use-multi-stage-builds
 FROM debian:buster-slim
 RUN set -x && apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y \
-<<<<<<< HEAD
-    ca-certificates curl && \
-    rm -rf /var/lib/apt/lists/*
-=======
-  ca-certificates && \
+  ca-certificates curl && \
   rm -rf /var/lib/apt/lists/*
->>>>>>> main
 
 # Copy the binary to the production image from the builder stage.
 COPY --from=builder /app/bundler /app/bundler
