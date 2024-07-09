@@ -49,11 +49,13 @@ type Values struct {
 	DebugMode                    bool
 	GinMode                      string
 	SolverURL                    string
-	ServiceName                  string
-	OTELIsEnabled                bool
-	OTELCollectorHeaders         map[string]string
-	OTELCollectorEndpoint        string
-	OTELInsecureMode             bool
+	// If empty, all addresses will be accepted
+	WhiteListedAddresses  []common.Address
+	ServiceName           string
+	OTELIsEnabled         bool
+	OTELCollectorHeaders  map[string]string
+	OTELCollectorEndpoint string
+	OTELInsecureMode      bool
 }
 
 func variableNotSetOrIsNil(env string) bool {
@@ -107,6 +109,7 @@ func GetValues() *Values {
 	viper.SetDefault("erc4337_bundler_native_bundler_collector_tracer", CollectorTracer)
 	viper.SetDefault("erc4337_bundler_native_bundler_executor_tracer", ExecutorTracer)
 	viper.SetDefault("erc4337_bundler_status_timeout", time.Second*300)
+	viper.SetDefault("erc4337_bundler_address_whitelist", "")
 
 	// Read in from .env file if available
 	viper.SetConfigName(".env")
@@ -149,6 +152,7 @@ func GetValues() *Values {
 	_ = viper.BindEnv("erc4337_bundler_gin_mode")
 	_ = viper.BindEnv("solver_url")
 	_ = viper.BindEnv("erc4337_bundler_status_timeout")
+	_ = viper.BindEnv("erc4337_bundler_address_whitelist")
 
 	// Validate required variables
 	if variableNotSetOrIsNil("erc4337_bundler_eth_client_url") {
@@ -212,6 +216,7 @@ func GetValues() *Values {
 	ginMode := viper.GetString("erc4337_bundler_gin_mode")
 	solverURL := viper.GetString("solver_url")
 	useropStatusWaitTime := viper.GetDuration("erc4337_bundler_status_timeout")
+	whitelistedAddresses := envArrayToStringSlice(viper.GetString("erc4337_bundler_address_whitelist"))
 
 	return &Values{
 		PrivateKey:                   privateKey,
@@ -242,6 +247,7 @@ func GetValues() *Values {
 		GinMode:                      ginMode,
 		SolverURL:                    solverURL,
 		StatusTimeout:                useropStatusWaitTime,
+		WhiteListedAddresses:         strToAddrs(whitelistedAddresses),
 	}
 }
 
@@ -258,4 +264,14 @@ func NewReputationConstantsFromEnv() *entities.ReputationConstants {
 		ThrottlingSlack:                10,
 		BanSlack:                       50,
 	}
+}
+
+func strToAddrs(s []string) []common.Address {
+	a := make([]common.Address, 0, len(s))
+
+	for _, v := range s {
+		a = append(a, common.HexToAddress(v))
+	}
+
+	return a
 }

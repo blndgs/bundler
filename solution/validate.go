@@ -2,11 +2,13 @@ package solution
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"net/http"
 	"net/url"
 	"unsafe"
 
+	"github.com/blndgs/bundler/utils"
 	"github.com/blndgs/model"
 	"github.com/goccy/go-json"
 	"github.com/stackup-wallet/stackup-bundler/pkg/modules"
@@ -18,6 +20,10 @@ import (
 // in other to validate if the userops are valid or not
 func (ei *IntentsHandler) ValidateIntents() modules.BatchHandlerFunc {
 	return func(ctx *modules.BatchHandlerCtx) error {
+
+		_, span := utils.GetTracer().
+			Start(context.Background(), "ValidateIntents")
+		defer span.End()
 
 		batchIntentIndices := make(batchIntentIndices)
 
