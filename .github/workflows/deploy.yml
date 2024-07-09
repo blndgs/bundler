@@ -91,6 +91,10 @@ jobs:
             yq w -i docker-compose.yaml 'services.bundler.environment[2]' "ERC4337_BUNDLER_MAX_BATCH_GAS_LIMIT=${{ secrets[format('{0}_ERC4337_BUNDLER_MAX_BATCH_GAS_LIMIT', env.PREFIX)] }}"
             yq w -i docker-compose.yaml 'services.bundler.environment[3]' "ERC4337_BUNDLER_DEBUG_MODE=${{ secrets[format('{0}_ERC4337_BUNDLER_DEBUG_MODE', env.PREFIX)] }}"
             yq w -i docker-compose.yaml 'services.bundler.environment[4]' "SOLVER_URL=${{ secrets[format('{0}_SOLVER_URL', env.PREFIX)] }}"
+            yq w -i docker-compose.yaml 'services.bundler.environment[5]' "ERC4337_BUNDLER_OTEL_IS_ENABLED=true"
+            yq w -i docker-compose.yaml 'services.bundler.environment[6]' "ERC4337_BUNDLER_OTEL_COLLECTOR_URL=${{ secrets.OTEL_EXPORTER_OTLP_ENDPOINT }}"
+            yq w -i docker-compose.yaml 'services.bundler.environment[7]' "ERC4337_BUNDLER_OTEL_COLLECTOR_HEADERS=${{ secrets.OTEL_EXPORTER_OTLP_HEADERS }}"
+            yq w -i docker-compose.yaml 'services.bundler.environment[8]' "ERC4337_BUNDLER_SERVICE_NAME=${{ vars[format('{0}_BUNDLER_SERVICE_NAME', env.PREFIX)] }}"
             docker-compose up -d
       - name: Get the outputs from Deploy image
         run: echo "The Command id is ${{ steps.deploy.outputs.command-id }}"
