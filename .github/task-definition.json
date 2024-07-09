@@ -33,6 +33,22 @@
         {
           "name": "SOLVER_URL",
           "value": "VAR_SOLVER_URL"
+        },
+        {
+          "name": "ERC4337_BUNDLER_OTEL_IS_ENABLED",
+          "value": "VAR_ERC4337_BUNDLER_OTEL_IS_ENABLED"
+        },
+        {
+          "name": "ERC4337_BUNDLER_OTEL_COLLECTOR_URL",
+          "value": "VAR_ERC4337_BUNDLER_OTEL_COLLECTOR_URL"
+        },
+        {
+          "name": "ERC4337_BUNDLER_OTEL_COLLECTOR_HEADERS",
+          "value": "VAR_ERC4337_BUNDLER_OTEL_COLLECTOR_HEADERS"
+        },
+        {
+          "name": "ERC4337_BUNDLER_SERVICE_NAME",
+          "value": "VAR_ERC4337_BUNDLER_SERVICE_NAME"
         }
       ],
       "healthCheck": {
