@@ -70,7 +70,7 @@ func CheckSenderWhitelist(db *badger.DB,
 				})
 				if err != nil {
 					logger.Error(err, "Sender not found in whitelist; removing transaction from batch", "address", userop.Sender.Hex())
-					ctx.Batch = append(ctx.Batch[:idx], ctx.Batch[idx+1:]...)
+					ctx.MarkOpIndexForRemoval(idx, "sender not whitelisted")
 				}
 			}
 

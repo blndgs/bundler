@@ -31,6 +31,9 @@ jobs:
             echo "Not running on a pull request"
           fi
 
+      - name: Run Tests
+        run: make test
+
       - name: Determine Environment Prefix
         id: env_prefix
         run: |
