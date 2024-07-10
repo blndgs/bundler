@@ -1,0 +1,148 @@
+name: Deploy to ECS
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+  push:
+    branches: [main, testnet, live, stage]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build Image
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v2
+
+      - name: Enforce module version
+        uses: adelowo/enforce-gomod-version@v0.2.0
+        with:
+          modules: |
+            github.com/ethereum/go-ethereum => v1.11.5
+
+      - name: Display branch information
+        run: |
+          echo "Running on branch: ${{ github.ref_name }}"
+          if [[ -n "${{ github.base_ref }}" ]]; then
+            echo "Target branch for pull request: ${{ github.base_ref }}"
+          else
+            echo "Not running on a pull request"
+          fi
+
+      - name: Determine Environment Prefix
+        id: env_prefix
+        run: |
+          BRANCH=${{ github.base_ref }}  # This is set for pull requests
+          [ -z "$BRANCH" ] && BRANCH=${{ github.ref_name }}  # Fallback to current branch if not a pull request
+          PREFIX=$(echo $BRANCH | awk -F'-' '{print toupper($1)}')  # Extract prefix and convert to upper case
+          echo "PREFIX=$PREFIX" >> $GITHUB_ENV
+          echo "PREFIX=$PREFIX"
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets[format('{0}_AWS_ACCESS_KEY_ID', env.PREFIX)] }}
+          aws-secret-access-key: ${{ secrets[format('{0}_AWS_SECRET_ACCESS_KEY', env.PREFIX)] }}
+          aws-region: ${{ secrets[format('{0}_AWS_REGION', env.PREFIX)] }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v1
+
+      - name: Build, tag, and push image to Amazon ECR
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: ${{ secrets[format('{0}_AWS_REPOSITORY', env.PREFIX)] }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+
+  deploy:
+    name: Deploy Image and Env Variables
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/'))
+    steps:
+      - name: Determine Environment Prefix
+        id: env_prefix
+        run: |
+          BRANCH=${{ github.base_ref }}  # This is set for pull requests
+          [ -z "$BRANCH" ] && BRANCH=${{ github.ref_name }}  # Fallback to current branch if not a pull request
+          PREFIX=$(echo $BRANCH | awk -F'-' '{print toupper($1)}')  # Extract prefix and convert to upper case
+          echo "PREFIX=$PREFIX" >> $GITHUB_ENV
+          echo "PREFIX=$PREFIX"
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets[format('{0}_AWS_ACCESS_KEY_ID', env.PREFIX)] }}
+          aws-secret-access-key: ${{ secrets[format('{0}_AWS_SECRET_ACCESS_KEY', env.PREFIX)] }}
+          aws-region: ${{ secrets[format('{0}_AWS_REGION', env.PREFIX)] }}
+      - uses: actions/checkout@v2
+
+      - name: Change task definition
+        id: change_task_definition
+        env:
+          VAR_ENV_NAME: ${{ secrets[format('{0}_ENV_NAME', env.PREFIX)] }}
+          VAR_APP_NAME: "bundler"
+          VAR_IMAGE: ${{ secrets[format('{0}_ECR_URL', env.PREFIX)] }}/${{ secrets[format('{0}_AWS_REPOSITORY', env.PREFIX)] }}:${{ github.sha }}
+          VAR_ERC4337_BUNDLER_ETH_CLIENT_URL: ${{ secrets[format('{0}_ERC4337_BUNDLER_ETH_CLIENT_URL', env.PREFIX)] }}
+          VAR_ERC4337_BUNDLER_PRIVATE_KEY: ${{ secrets[format('{0}_ERC4337_BUNDLER_PRIVATE_KEY', env.PREFIX)] }}
+          VAR_ERC4337_BUNDLER_MAX_BATCH_GAS_LIMIT: ${{ secrets[format('{0}_ERC4337_BUNDLER_MAX_BATCH_GAS_LIMIT', env.PREFIX)] }}
+          VAR_ERC4337_BUNDLER_DEBUG_MODE: ${{ secrets[format('{0}_ERC4337_BUNDLER_DEBUG_MODE', env.PREFIX)] }}
+          VAR_SOLVER_URL: ${{ secrets[format('{0}_SOLVER_URL_NEW', env.PREFIX)] }}
+          VAR_AWS_REGION: ${{ secrets[format('{0}_AWS_REGION', env.PREFIX)] }}
+          VAR_ERC4337_BUNDLER_OTEL_IS_ENABLED: true
+          VAR_ERC4337_BUNDLER_OTEL_COLLECTOR_URL: ${{ secrets.OTEL_EXPORTER_OTLP_ENDPOINT }}
+          VAR_ERC4337_BUNDLER_OTEL_COLLECTOR_HEADERS: ${{ secrets.OTEL_EXPORTER_OTLP_HEADERS }}
+          VAR_ERC4337_ERC4337_BUNDLER_SERVICE_NAME: ${{ vars[format('{0}_BUNDLER_SERVICE_NAME', env.PREFIX)] }}
+        run: |
+          cp -p .github/task-definition.json task-definition.json
+          sed -i "s+AWS_REGION+${VAR_AWS_REGION}+g" task-definition.json
+          sed -i "s+ENV_NAME+${VAR_ENV_NAME}+g" task-definition.json
+          sed -i "s+APP_NAME+${VAR_APP_NAME}+g" task-definition.json
+          sed -i "s+IMAGE+${VAR_IMAGE}+g" task-definition.json
+          sed -i "s+VAR_ERC4337_BUNDLER_ETH_CLIENT_URL+${VAR_ERC4337_BUNDLER_ETH_CLIENT_URL}+g" task-definition.json
+          sed -i "s+VAR_ERC4337_BUNDLER_PRIVATE_KEY+${VAR_ERC4337_BUNDLER_PRIVATE_KEY}+g" task-definition.json
+          sed -i "s+VAR_ERC4337_BUNDLER_MAX_BATCH_GAS_LIMIT+${VAR_ERC4337_BUNDLER_MAX_BATCH_GAS_LIMIT}+g" task-definition.json
+          sed -i "s+VAR_ERC4337_BUNDLER_DEBUG_MODE+${VAR_ERC4337_BUNDLER_DEBUG_MODE}+g" task-definition.json
+          sed -i "s+VAR_SOLVER_URL+${VAR_SOLVER_URL}+g" task-definition.json
+          sed -i "s+VAR_ERC4337_BUNDLER_OTEL_IS_ENABLED+${VAR_ERC4337_BUNDLER_OTEL_IS_ENABLED}+g" task-definition.json
+          sed -i "s+VAR_ERC4337_BUNDLER_OTEL_COLLECTOR_URL+${VAR_ERC4337_BUNDLER_OTEL_COLLECTOR_URL}+g" task-definition.json
+          sed -i "s+VAR_ERC4337_BUNDLER_OTEL_COLLECTOR_HEADERS+${VAR_ERC4337_BUNDLER_OTEL_COLLECTOR_HEADERS}+g" task-definition.json
+          sed -i "s+VAR_ERC4337_ERC4337_BUNDLER_SERVICE_NAME+${VAR_ERC4337_ERC4337_BUNDLER_SERVICE_NAME}+g" task-definition.json
+          cat task-definition.json
+
+      - name: Deploy Amazon ECS task definition
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v1
+        with:
+          cluster: ${{ secrets[format('{0}_ENV_NAME', env.PREFIX)] }}-backend
+          service: ${{ secrets[format('{0}_ENV_NAME', env.PREFIX)] }}-bundler
+          task-definition: task-definition.json
+          wait-for-service-stability: false
+          wait-for-minutes: 5
+
+  run-integration-tests:
+    name: Trigger E2Etests
+    needs: [deploy]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger E2Etests
+        run: |
+          response=$(curl -L -X POST -H "Accept: application/vnd.github+json" \
+          -H "Authorization: Bearer ${{secrets.GH_ACTION_TRIGGER_TOKEN }}" \
+          -H "X-GitHub-Api-Version: 2022-11-28" \
+          https://api.github.com/repos/blndgs/e2etests/actions/workflows/test-infra.yml/dispatches -d '{"ref":"main"}' \
+          -w "%{http_code}")
+
+          http_code=$(echo "$response" | tail -n1)
+
+          if [ "$http_code" -le 204 ]; then
+            echo "Workflow dispatch successful! (Status code: $http_code)"
+          else
+            echo "Workflow dispatch failed. (Status code: $http_code)"
+            exit 128;
+          fi
