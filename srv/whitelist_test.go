@@ -68,7 +68,8 @@ func TestCheckSenderWhitelist(t *testing.T) {
 				whitelistedAddresses = append(whitelistedAddresses, common.HexToAddress(addr))
 			}
 
-			handler := CheckSenderWhitelist(db, whitelistedAddresses, logr.Discard())
+			handler, teardownFn := CheckSenderWhitelist(db, whitelistedAddresses, logr.Discard())
+			defer teardownFn()
 
 			batch := []*userop.UserOperation{}
 
