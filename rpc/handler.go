@@ -391,16 +391,9 @@ func waitForUserOpCompletion(ctx context.Context, ethClient *ethclient.Client,
 
 	opHash := userOpHash.String()
 
-	// Retrieve the transaction hash from sync.Map
-	opHashes, ok := txHashes.Load(opHash)
-	if !ok {
-		return nil, errors.New("userop hash not found")
-	}
-
 	span.SetAttributes(
 		attribute.String("userop_hash", opHash),
 		attribute.Int64("wait_timeout", int64(waitTimeout)),
-		attribute.String("tx_hash", opHashes.Trx.String()),
 	)
 
 	ticker := time.NewTicker(statusCheckTickingInterval)
@@ -412,6 +405,14 @@ func waitForUserOpCompletion(ctx context.Context, ethClient *ethclient.Client,
 	for {
 		select {
 		case <-ticker.C:
+
+			// Retrieve the transaction hash from sync.Map
+			opHashes, ok := txHashes.Load(opHash)
+			if !ok {
+				continue
+			}
+
+			span.SetAttributes(attribute.String("tx_hash", opHashes.Trx.String()))
 
 			receipt, err := ethClient.TransactionReceipt(ctx, opHashes.Trx)
 			if err != nil {
