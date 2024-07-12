@@ -4,10 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math/big"
 	"net/http"
 	"reflect"
-	"strconv"
 	"strings"
 	"time"
 
@@ -296,25 +294,16 @@ func handleEthCallRequest(ctx context.Context, c *gin.Context, ethClient *ethcli
 		}
 	}
 
-	var blockNumber *big.Int
-	if len(params) > 1 {
-		blockParam := params[1].(string)
-		if blockParam != "latest" {
-			var intBlockNumber int64
-			intBlockNumber, err := strconv.ParseInt(blockParam, 10, 64)
-			if err != nil {
-				logger.Error(err, "block number must be an integer or 'latest'")
-				jsonrpcError(c, -32602, "Invalid params", "Third parameter should be a block number or 'latest'", nil)
-				return
-			}
-			blockNumber = big.NewInt(intBlockNumber)
-		}
+	blockNumber, err := ParseAndSetBlockNumber(span, params)
+	if err != nil {
+		logger.Error(err, "Invalid block number")
+		jsonrpcError(c, -32602, "Invalid params", err.Error(), requestData["id"])
+		return
 	}
 
-	span.SetAttributes(
-		attribute.String("to", to),
-		attribute.Int64("block_number", blockNumber.Int64()),
-	)
+	if to != "" {
+		span.SetAttributes(attribute.String("to", to))
+	}
 
 	result, err := ethClient.CallContract(ctx, callMsg, blockNumber)
 	// The erc-4337 spec has a special case for revert errors, where the revert data is returned as the result
