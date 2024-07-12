@@ -313,10 +313,10 @@ func handleEthCallRequest(ctx context.Context, c *gin.Context, ethClient *ethcli
 
 	span.SetAttributes(
 		attribute.String("to", to),
-		attribute.Int64("block_number", blockNumber.Int64()),
+		attribute.String("block_number", blockNumber.String()),
 	)
 
-	result, err := ethClient.CallContract(ctx, callMsg, blockNumber)
+	result, err := ethClient.CallContract(c, callMsg, blockNumber)
 	// The erc-4337 spec has a special case for revert errors, where the revert data is returned as the result
 	const revertErrorKey = "execution reverted"
 	if err != nil && err.Error() == revertErrorKey {
