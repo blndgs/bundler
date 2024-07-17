@@ -3,13 +3,13 @@ package solution
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
 	"unsafe"
 
 	multierror "github.com/hashicorp/go-multierror"
+	pkgerrors "github.com/pkg/errors"
 
 	"github.com/blndgs/bundler/srv"
 	"github.com/blndgs/bundler/utils"
@@ -91,10 +91,10 @@ func (ei *IntentsHandler) sendToSolverForValidation(
 				}
 
 				if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
-					return fmt.Errorf("could not decode response from solver validation: %w", err)
+					return pkgerrors.Wrap(err, "could not decode response from solver validation")
 				}
 
-				err := errors.New(response.Error)
+				err := fmt.Errorf("solver validation failed: %s", response.Error)
 
 				// skip too much typecasting and just reuse the item from the batch
 				currentOpHash, unsolvedOpHash := utils.GetUserOpHash(batch[idx], ei.ep, ei.chainID)
