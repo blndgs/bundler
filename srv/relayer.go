@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/blndgs/bundler/utils"
-	"github.com/blndgs/model"
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
@@ -32,6 +31,9 @@ const (
 type OpHashes struct {
 	Solved string
 	Trx    common.Hash
+
+	// If this encountered an error earlier
+	Error error
 }
 
 // Relayer provides a module that can relay batches with a regular EOA. Relaying batches to the EntryPoint
@@ -152,22 +154,16 @@ func (r *Relayer) SendUserOperation() modules.BatchHandlerFunc {
 				ctx.Data["txn_hash"] = txHash
 				// Store the transaction hash for each userOp in the batch.
 				for _, op := range ctx.Batch {
-					currentOpHash := op.GetUserOpHash(r.ep, r.chainID).String()
-					opHashes := OpHashes{
-						Solved: currentOpHash,
-						Trx:    txn.Hash(),
-					}
 
-					mOp := (model.UserOperation)(*op)
-					var unsolvedOpHash = currentOpHash
-					if mOp.HasIntent() && len(mOp.Signature) > model.KernelSignatureLength {
-						// Restore the userOp to unsolved state
-						mOp.CallData = mOp.Signature[mOp.GetSignatureEndIdx():]
-						mOp.Signature = mOp.GetSignatureValue()
+					currentOpHash, unsolvedOpHash := utils.GetUserOpHash(op, r.ep, r.chainID)
 
-						unsolvedOpHash = mOp.GetUserOpHash(r.ep, r.chainID).String()
-					}
-					r.m.Store(unsolvedOpHash, opHashes)
+					r.m.Compute(unsolvedOpHash, func(oldValue OpHashes, loaded bool) (newValue OpHashes, delete bool) {
+						return OpHashes{
+							Error:  oldValue.Error,
+							Solved: currentOpHash,
+							Trx:    txn.Hash(),
+						}, false
+					})
 				}
 			}
 		}

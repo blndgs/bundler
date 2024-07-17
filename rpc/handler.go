@@ -414,6 +414,10 @@ func waitForUserOpCompletion(ctx context.Context, ethClient *ethclient.Client,
 
 			span.SetAttributes(attribute.String("tx_hash", opHashes.Trx.String()))
 
+			if opHashes.Error != nil {
+				return nil, opHashes.Error
+			}
+
 			receipt, err := ethClient.TransactionReceipt(ctx, opHashes.Trx)
 			if err != nil {
 				if errors.Is(err, ethereum.NotFound) {
