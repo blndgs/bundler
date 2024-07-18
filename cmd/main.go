@@ -122,7 +122,9 @@ func main() {
 
 	check := validator.ToStandaloneCheck()
 
-	whitelistHandler, whitelistCleanupFn := srv.CheckSenderWhitelist(db, values.WhiteListedAddresses, stdLogger)
+	whitelistHandler, whitelistCleanupFn := srv.CheckSenderWhitelist(db, values.WhiteListedAddresses,
+		stdLogger, relayer.GetOpHashes(),
+		values.SupportedEntryPoints[0], chain)
 
 	if whitelistHandler == nil {
 		stdLogger.Info("could not set up sender whitelist middleware")

@@ -2,12 +2,16 @@ package srv
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"math/big"
 
 	"github.com/blndgs/bundler/utils"
 	"github.com/dgraph-io/badger/v3"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/go-logr/logr"
+	multierror "github.com/hashicorp/go-multierror"
+	"github.com/puzpuzpuz/xsync/v3"
 	"github.com/stackup-wallet/stackup-bundler/pkg/modules"
 )
 
@@ -25,7 +29,8 @@ func getWhitelistKey(addr common.Address) string {
 // They must always come fresh from the env variable
 func CheckSenderWhitelist(db *badger.DB,
 	whitelistedAddresses []common.Address,
-	logger logr.Logger) (modules.BatchHandlerFunc, func() error) {
+	logger logr.Logger, txHashes *xsync.MapOf[string, OpHashes],
+	entrypointAddr common.Address, chainID *big.Int) (modules.BatchHandlerFunc, func() error) {
 
 	logger.Info("Setting up addresses in BadgerDB for whitelist checks")
 
@@ -71,6 +76,15 @@ func CheckSenderWhitelist(db *badger.DB,
 				if err != nil {
 					logger.Error(err, "Sender not found in whitelist; removing transaction from batch", "address", userop.Sender.Hex())
 					ctx.MarkOpIndexForRemoval(idx, "sender not whitelisted")
+
+					currentOpHash, unsolvedOpHash := utils.GetUserOpHash(userop, entrypointAddr, chainID)
+
+					txHashes.Compute(unsolvedOpHash, func(oldValue OpHashes, loaded bool) (newValue OpHashes, delete bool) {
+						return OpHashes{
+							Error:  multierror.Append(oldValue.Error, errors.New("sender not found in whitelist")),
+							Solved: currentOpHash,
+						}, false
+					})
 				}
 			}
 
