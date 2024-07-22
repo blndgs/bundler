@@ -24,11 +24,13 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/blndgs/bundler/srv"
 	"github.com/blndgs/model"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/go-logr/logr"
 	"github.com/goccy/go-json"
 	"github.com/pkg/errors"
+	"github.com/puzpuzpuz/xsync/v3"
 
 	pb "github.com/blndgs/model/gen/go/proto/v1"
 
@@ -51,13 +53,21 @@ type IntentsHandler struct {
 	SolverURL    string
 	SolverClient *http.Client
 	logger       logr.Logger
+	txHashes     *xsync.MapOf[string, srv.OpHashes]
+	ep           common.Address
+	chainID      *big.Int
 }
 
-func New(solverURL string, logger logr.Logger) *IntentsHandler {
+func New(solverURL string, logger logr.Logger,
+	txHashes *xsync.MapOf[string, srv.OpHashes],
+	entrypoint common.Address, chainID *big.Int) *IntentsHandler {
 	return &IntentsHandler{
 		SolverURL:    solverURL,
 		SolverClient: &http.Client{Timeout: httpClientTimeout},
 		logger:       logger,
+		txHashes:     txHashes,
+		ep:           entrypoint,
+		chainID:      chainID,
 	}
 }
 
@@ -161,10 +171,10 @@ func (ei *IntentsHandler) SolveIntents() modules.BatchHandlerFunc {
 	}
 }
 
-func ReportSolverHealth(solverURL string, logger logr.Logger) error {
+func (h *IntentsHandler) ReportSolverHealth(solverURL string) error {
 	parsedURL, err := url.Parse(solverURL)
 	if err != nil {
-		logger.Error(err, "solver url is invalid", "url", solverURL)
+		h.logger.Error(err, "solver url is invalid", "url", solverURL)
 		return err
 	}
 
@@ -174,16 +184,14 @@ func ReportSolverHealth(solverURL string, logger logr.Logger) error {
 
 	solverURL = parsedURL.String()
 
-	logger.Info("Requesting solver health", "url", solverURL)
-
-	handler := New(solverURL, logger)
+	h.logger.Info("Requesting solver health", "url", solverURL)
 
 	req, err := http.NewRequest(http.MethodGet, solverURL, nil)
 	if err != nil {
 		return err
 	}
 
-	resp, err := handler.SolverClient.Do(req)
+	resp, err := h.SolverClient.Do(req)
 	if err != nil {
 		return err
 	}
@@ -193,10 +201,10 @@ func ReportSolverHealth(solverURL string, logger logr.Logger) error {
 		return fmt.Errorf("solver health check returned non-OK status: %s", resp.Status)
 	}
 
-	logger.Info("Solver health check done", "status", resp.Status)
+	h.logger.Info("Solver health check done", "status", resp.Status)
 	_, err = io.Copy(io.Discard, resp.Body)
 	if err != nil {
-		logger.Error(err, "could not copy response status")
+		h.logger.Error(err, "could not copy response status")
 		return err
 	}
 

@@ -110,8 +110,9 @@ func main() {
 	relayer := srv.New(values.SupportedEntryPoints[0], eoa, eth, chain, beneficiary, stdLogger)
 
 	stdLogger.Info("Using solver url", "url", values.SolverURL)
-	solver := solution.New(values.SolverURL, stdLogger)
-	if err := solution.ReportSolverHealth(values.SolverURL, stdLogger); err != nil {
+
+	solver := solution.New(values.SolverURL, stdLogger, relayer.GetOpHashes(), values.SupportedEntryPoints[0], chain)
+	if err := solver.ReportSolverHealth(values.SolverURL); err != nil {
 		log.Fatal(err)
 	}
 
@@ -121,7 +122,9 @@ func main() {
 
 	check := validator.ToStandaloneCheck()
 
-	whitelistHandler, whitelistCleanupFn := srv.CheckSenderWhitelist(db, values.WhiteListedAddresses, stdLogger)
+	whitelistHandler, whitelistCleanupFn := srv.CheckSenderWhitelist(db, values.WhiteListedAddresses,
+		stdLogger, relayer.GetOpHashes(),
+		values.SupportedEntryPoints[0], chain)
 
 	if whitelistHandler == nil {
 		stdLogger.Info("could not set up sender whitelist middleware")

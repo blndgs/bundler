@@ -1,11 +1,14 @@
 package srv
 
 import (
+	"math/big"
 	"testing"
 
+	"github.com/blndgs/bundler/conf"
 	"github.com/dgraph-io/badger/v3"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/go-logr/logr"
+	"github.com/puzpuzpuz/xsync/v3"
 	"github.com/stackup-wallet/stackup-bundler/pkg/modules"
 	"github.com/stackup-wallet/stackup-bundler/pkg/userop"
 	"github.com/stretchr/testify/require"
@@ -68,7 +71,9 @@ func TestCheckSenderWhitelist(t *testing.T) {
 				whitelistedAddresses = append(whitelistedAddresses, common.HexToAddress(addr))
 			}
 
-			handler, teardownFn := CheckSenderWhitelist(db, whitelistedAddresses, logr.Discard())
+			handler, teardownFn := CheckSenderWhitelist(db, whitelistedAddresses, logr.Discard(),
+				xsync.NewMapOf[string, OpHashes](),
+				common.HexToAddress(conf.EntrypointAddrV060), big.NewInt(1))
 			defer teardownFn()
 
 			batch := []*userop.UserOperation{}
@@ -76,7 +81,13 @@ func TestCheckSenderWhitelist(t *testing.T) {
 			// build multiple user ops
 			for _, addr := range v.addressToUseInTx {
 				batch = append(batch, &userop.UserOperation{
-					Sender: common.HexToAddress(addr),
+					Sender:               common.HexToAddress(addr),
+					MaxFeePerGas:         big.NewInt(1000),
+					Nonce:                big.NewInt(20),
+					CallGasLimit:         big.NewInt(1000),
+					PreVerificationGas:   big.NewInt(1002),
+					VerificationGasLimit: big.NewInt(10005),
+					MaxPriorityFeePerGas: big.NewInt(14003),
 				})
 			}
 

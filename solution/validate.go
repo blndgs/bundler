@@ -8,10 +8,15 @@ import (
 	"net/url"
 	"unsafe"
 
+	multierror "github.com/hashicorp/go-multierror"
+	pkgerrors "github.com/pkg/errors"
+
+	"github.com/blndgs/bundler/srv"
 	"github.com/blndgs/bundler/utils"
 	"github.com/blndgs/model"
 	"github.com/goccy/go-json"
 	"github.com/stackup-wallet/stackup-bundler/pkg/modules"
+	"github.com/stackup-wallet/stackup-bundler/pkg/userop"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -35,13 +40,15 @@ func (ei *IntentsHandler) ValidateIntents() modules.BatchHandlerFunc {
 			return nil
 		}
 
-		return ei.sendToSolverForValidation(body)
+		return ei.sendToSolverForValidation(body, ctx.Batch)
 	}
 }
 
 // sendToSolverForValidation  sends the batch of UserOperations to the Solver.
 // to validate them
-func (ei *IntentsHandler) sendToSolverForValidation(body model.BodyOfUserOps) error {
+func (ei *IntentsHandler) sendToSolverForValidation(
+	body model.BodyOfUserOps,
+	batch []*userop.UserOperation) error {
 
 	parsedURL, err := url.Parse(ei.SolverURL)
 	if err != nil {
@@ -56,7 +63,7 @@ func (ei *IntentsHandler) sendToSolverForValidation(body model.BodyOfUserOps) er
 
 	var g errgroup.Group
 
-	for _, op := range body.UserOps {
+	for idx, op := range body.UserOps {
 		g.Go(func() error {
 			jsonBody, err := json.Marshal(op)
 			if err != nil {
@@ -78,10 +85,31 @@ func (ei *IntentsHandler) sendToSolverForValidation(body model.BodyOfUserOps) er
 			defer resp.Body.Close()
 
 			if resp.StatusCode != http.StatusOK {
-				return fmt.Errorf("solver returned non-OK status: %s", resp.Status)
+
+				var response struct {
+					Error string `json:"error"`
+				}
+
+				if err := json.NewDecoder(resp.Body).Decode(&response); err != nil {
+					return pkgerrors.Wrap(err, "could not decode response from solver validation")
+				}
+
+				err := fmt.Errorf("solver validation failed: %s", response.Error)
+
+				// skip too much typecasting and just reuse the item from the batch
+				currentOpHash, unsolvedOpHash := utils.GetUserOpHash(batch[idx], ei.ep, ei.chainID)
+
+				ei.txHashes.Compute(unsolvedOpHash, func(oldValue srv.OpHashes, loaded bool) (newValue srv.OpHashes, delete bool) {
+					return srv.OpHashes{
+						Error:  multierror.Append(oldValue.Error, err),
+						Solved: currentOpHash,
+					}, false
+				})
+
+				return err
 			}
 
-			return json.NewDecoder(resp.Body).Decode(&body)
+			return nil
 		})
 	}
 
