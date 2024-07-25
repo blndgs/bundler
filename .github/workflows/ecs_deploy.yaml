@@ -60,8 +60,13 @@ jobs:
           ECR_REPOSITORY: ${{ secrets[format('{0}_AWS_REPOSITORY', env.PREFIX)] }}
           IMAGE_TAG: ${{ github.sha }}
         run: |
-          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
-          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          FLAG_IMAGE_TAG_EXISTS=$(aws ecr describe-images --repository-name ${ECR_REPOSITORY} --image-ids imageTag=${IMAGE_TAG} 1>/dev/null 2>&1; echo $?)
+          if [ ${FLAG_IMAGE_TAG_EXISTS} -ne 0 ];then
+              docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+              docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          else
+              echo "Image already exists, proceding..."
+          fi
 
   deploy:
     name: Deploy Image and Env Variables
