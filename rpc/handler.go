@@ -46,8 +46,9 @@ var bundlerMethods = map[string]bool{
 }
 
 const (
-	ethSendOpMethod = "eth_senduseroperation"
-	ethCall         = "eth_call"
+	ethSendOpMethod             = "eth_senduseroperation"
+	ethCall                     = "eth_call"
+	ethEstimateUserOperationGas = "eth_estimateuseroperationgas"
 
 	statusCheckTickingInterval = 500 * time.Millisecond
 )
@@ -125,7 +126,9 @@ func ExtERC4337Controller(hashesMap *xsync.MapOf[string, srv.OpHashes],
 
 		logger.Info("Processing rpc request", "method", method)
 
-		if isStdEthereumRPCMethod(method) || strings.ToLower(method) == ethSendOpMethod {
+		if isStdEthereumRPCMethod(method) ||
+			strings.ToLower(method) == ethSendOpMethod ||
+			strings.ToLower(method) == ethEstimateUserOperationGas {
 			routeStdEthereumRPCRequest(ctx, c, rpcAdapter, method, rpcClient, ethRPCClient, hashesMap, data, values, logger)
 			return
 		}
@@ -172,6 +175,8 @@ func routeStdEthereumRPCRequest(ctx context.Context, c *gin.Context, rpcAdapter 
 		handleEthSendUserOperation(ctx, c, rpcAdapter, ethClient, hashesMap, requestData, values, logger)
 	case ethCall:
 		handleEthCallRequest(ctx, c, ethClient, requestData, logger)
+	case ethEstimateUserOperationGas:
+		handleEthEstimateGas(ctx, c, rpcAdapter, requestData, logger)
 	default:
 		handleEthRequest(ctx, c, method, rpcClient, requestData, logger)
 	}
@@ -433,6 +438,46 @@ func waitForUserOpCompletion(ctx context.Context, ethClient *ethclient.Client,
 			return nil, ctx.Err()
 		}
 	}
+}
+
+func handleEthEstimateGas(ctx context.Context, c *gin.Context,
+	rpcAdapter *client.RpcAdapter,
+	requestData map[string]any,
+	logger logr.Logger) {
+
+	ctx, span := utils.GetTracer().Start(c.Request.Context(), "handleEthEstimateGas")
+	defer span.End()
+
+	var op map[string]any
+	if err := mapstructure.Decode(requestData["params"].([]interface{})[0], &op); err != nil {
+		logger.Error(err, "could not decode request params")
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid user operation"})
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return
+	}
+
+	ep := requestData["params"].([]interface{})[1].(string)
+
+	estimates, err := rpcAdapter.Eth_estimateUserOperationGas(op, ep, nil)
+	if err != nil {
+		logger.Error(err, "could not estimate user operation gas")
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return
+	}
+
+	jsonResp, err := json.Marshal(estimates)
+	if err != nil {
+		logger.Error(err, "error while parsing gas estimates")
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+		return
+	}
+
+	sendRawJson(ctx, c, json.RawMessage(jsonResp), requestData["id"], logger)
 }
 
 func handleEthSendUserOperation(ctx context.Context, c *gin.Context, rpcAdapter *client.RpcAdapter,

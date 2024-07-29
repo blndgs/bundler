@@ -5,6 +5,7 @@ import (
 
 	"github.com/blndgs/model"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/stackup-wallet/stackup-bundler/pkg/modules"
 	"github.com/stackup-wallet/stackup-bundler/pkg/userop"
 )
 
@@ -28,3 +29,15 @@ func GetUserOpHash(op *userop.UserOperation,
 	return
 }
 
+// DropAllUserOps will drop the entire userops in the current batch and add it to the pending removal array.
+// These userops will be dropped from the mempool and won't go on-chain either
+func DropAllUserOps(c *modules.BatchHandlerCtx, reason string) {
+	for _, op := range c.Batch {
+		c.PendingRemoval = append(c.PendingRemoval, &modules.PendingRemovalItem{
+			Op:     op,
+			Reason: reason,
+		})
+	}
+
+	c.Batch = []*userop.UserOperation{}
+}
