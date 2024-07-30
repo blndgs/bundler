@@ -19,8 +19,12 @@ import (
 func (r *Relayer) LimitGas(values *conf.Values) modules.BatchHandlerFunc {
 	return func(ctx *modules.BatchHandlerCtx) error {
 
+		if !values.EnableGasLimitChecks {
+			return nil
+		}
+
 		_, span := utils.GetTracer().
-			Start(context.Background(), "LimitGas")
+			Start(context.Background(), "Relayer.LimitGas")
 		defer span.End()
 
 		span.SetAttributes(
