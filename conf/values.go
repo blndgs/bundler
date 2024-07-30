@@ -60,8 +60,6 @@ type Values struct {
 
 	SimulationEnabled bool
 	SimulationTimeout time.Duration
-	TenderlyAcessKey  string
-	TenderlyURL       string
 }
 
 func variableNotSetOrIsNil(env string) bool {
@@ -230,9 +228,7 @@ func GetValues() *Values {
 	useropStatusWaitTime := viper.GetDuration("erc4337_bundler_status_timeout")
 	whitelistedAddresses := envArrayToStringSlice(viper.GetString("erc4337_bundler_address_whitelist"))
 	isSimulationEnabled := viper.GetBool("erc4337_bundler_tenderly_enable_simulation")
-	tenderlyURL := viper.GetString("erc4337_bundler_tenderly_url")
 	simulationTimeout := viper.GetDuration("erc4337_bundler_simulation_timeout")
-	tenderlyAcessKey := viper.GetString("erc4337_bundler_tenderly_access_key")
 
 	return &Values{
 		PrivateKey:                   privateKey,
@@ -265,8 +261,6 @@ func GetValues() *Values {
 		StatusTimeout:                useropStatusWaitTime,
 		WhiteListedAddresses:         strToAddrs(whitelistedAddresses),
 		SimulationEnabled:            isSimulationEnabled,
-		TenderlyURL:                  tenderlyURL,
-		TenderlyAcessKey:             tenderlyAcessKey,
 		SimulationTimeout:            simulationTimeout,
 	}
 }
