@@ -120,6 +120,41 @@ func (r *Relayer) SendUserOperation() modules.BatchHandlerFunc {
 			attribute.Int64("wait_timeout", int64(r.waitTimeout)),
 		)
 
+		for _, op := range ctx.Batch {
+
+			options := transaction.Opts{
+				EOA:         r.eoa,
+				Eth:         r.eth,
+				ChainID:     ctx.ChainID,
+				Batch:       []*userop.UserOperation{op},
+				EntryPoint:  ctx.EntryPoint,
+				Beneficiary: r.beneficiary,
+				BaseFee:     ctx.BaseFee,
+				Tip:         ctx.Tip,
+				GasPrice:    ctx.GasPrice,
+				GasLimit:    0,
+				WaitTimeout: r.waitTimeout,
+			}
+
+			est, revert, err := estimateHandleOpsGas(&options)
+			if revert != nil {
+				ctx.MarkOpIndexForRemoval(revert.OpIndex, revert.Reason)
+			} else if err != nil {
+				r.logger.Error(err, "failed to estimate gas for handleOps")
+
+				err = fmt.Errorf("failed to estimate gas for handleOps likely not enough gas: %w", err)
+				ctx.MarkOpIndexForRemoval(0, err.Error())
+
+				span.RecordError(err)
+				span.SetStatus(codes.Error, err.Error())
+			} else {
+				opts.GasLimit = est
+				opts.GasPrice = ctx.GasPrice
+				break
+			}
+
+		}
+
 		// Estimate gas for handleOps() and drop all userOps that cause unexpected reverts.
 		for len(ctx.Batch) > 0 {
 			est, revert, err := estimateHandleOpsGas(&opts)
