@@ -8,7 +8,6 @@ import (
 	"errors"
 	"math/big"
 	"net/http"
-	"time"
 
 	"github.com/blndgs/bundler/conf"
 	"github.com/blndgs/bundler/utils"
@@ -29,41 +28,34 @@ type tenderlySimulationRequest struct {
 }
 
 type simulationResponse struct {
-	LogID          string    `json:"logId"`
-	Timestamp      time.Time `json:"timestamp"`
-	Method         string    `json:"method"`
-	HTTPStatusCode int       `json:"httpStatusCode"`
-	NetworkID      string    `json:"networkId"`
-	Output         struct {
-		ID      int    `json:"id"`
-		Jsonrpc string `json:"jsonrpc"`
-		Result  struct {
-			Status       bool `json:"status"`
-			AssetChanges []struct {
-				AssetInfo struct {
-					Standard        string `json:"standard"`
-					Type            string `json:"type"`
-					ContractAddress string `json:"contractAddress"`
-					Symbol          string `json:"symbol"`
-					Name            string `json:"name"`
-					Logo            string `json:"logo"`
-					Decimals        int    `json:"decimals"`
-					DollarValue     string `json:"dollarValue"`
-				} `json:"assetInfo"`
-				Type        string `json:"type"`
-				From        string `json:"from,omitempty"`
-				To          string `json:"to"`
-				RawAmount   string `json:"rawAmount"`
-				Amount      string `json:"amount"`
-				DollarValue string `json:"dollarValue"`
-			} `json:"assetChanges"`
-			BalanceChanges []struct {
-				Address     string `json:"address"`
-				DollarValue string `json:"dollarValue"`
-				Transfers   []int  `json:"transfers"`
-			} `json:"balanceChanges"`
-		} `json:"result"`
-	} `json:"output"`
+	ID      int    `json:"id"`
+	Jsonrpc string `json:"jsonrpc"`
+	Result  struct {
+		Status       bool `json:"status"`
+		AssetChanges []struct {
+			AssetInfo struct {
+				Standard        string `json:"standard"`
+				Type            string `json:"type"`
+				ContractAddress string `json:"contractAddress"`
+				Symbol          string `json:"symbol"`
+				Name            string `json:"name"`
+				Logo            string `json:"logo"`
+				Decimals        int    `json:"decimals"`
+				DollarValue     string `json:"dollarValue"`
+			} `json:"assetInfo"`
+			Type        string `json:"type"`
+			From        string `json:"from"`
+			To          string `json:"to"`
+			RawAmount   string `json:"rawAmount"`
+			Amount      string `json:"amount"`
+			DollarValue string `json:"dollarValue"`
+		} `json:"assetChanges"`
+		BalanceChanges []struct {
+			Address     string `json:"address"`
+			DollarValue string `json:"dollarValue"`
+			Transfers   []int  `json:"transfers"`
+		} `json:"balanceChanges"`
+	} `json:"result"`
 }
 
 func SimulateTxWithTenderly(cfg *conf.Values,
@@ -181,13 +173,45 @@ func SimulateTxWithTenderly(cfg *conf.Values,
 				return err
 			}
 
-			logger = logger.WithValues("tenderely_logid", simulatedResponse.LogID)
-
-			if !simulatedResponse.Output.Result.Status || simulatedResponse.HTTPStatusCode != http.StatusOK {
+			if !simulatedResponse.Result.Status {
 				// all failures have an "execution reverted" message
 				logger.Error(errors.New("execution reverted"), "could not simulate transaction")
 
 				err = errors.New("could not simulate transaction. execution reverted")
+
+				txHashes.Compute(unsolvedOpHash, func(oldValue OpHashes, loaded bool) (newValue OpHashes, delete bool) {
+					return OpHashes{
+						Error:  multierror.Append(oldValue.Error, err),
+						Solved: currentOpHash,
+					}, false
+				})
+
+				return err
+			}
+
+			outgoingAssetChanges := simulatedResponse.Result.AssetChanges[0]
+
+			if common.HexToAddress(outgoingAssetChanges.From).Hex() != userop.Sender.Hex() {
+				err = errors.New("first outward transaction does not belong to the userop sender")
+
+				logger.Error(err, "unexpected asset_changes structure")
+
+				txHashes.Compute(unsolvedOpHash, func(oldValue OpHashes, loaded bool) (newValue OpHashes, delete bool) {
+					return OpHashes{
+						Error:  multierror.Append(oldValue.Error, err),
+						Solved: currentOpHash,
+					}, false
+				})
+
+				return err
+			}
+
+			incomingAssetChanges := simulatedResponse.Result.AssetChanges[len(simulatedResponse.Result.AssetChanges)-1]
+
+			if common.HexToAddress(incomingAssetChanges.To).Hex() != userop.Sender.Hex() {
+				err = errors.New("outward transaction does not belong to the userop sender")
+
+				logger.Error(err, "unexpected asset_changes structure")
 
 				txHashes.Compute(unsolvedOpHash, func(oldValue OpHashes, loaded bool) (newValue OpHashes, delete bool) {
 					return OpHashes{
