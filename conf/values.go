@@ -56,6 +56,12 @@ type Values struct {
 	OTELCollectorHeaders  map[string]string
 	OTELCollectorEndpoint string
 	OTELInsecureMode      bool
+
+	EnableGasLimitChecks bool
+	// Gas limit for a single user op
+	SingleUseropGaslimit *big.Int
+	// Gas limit for a batch of userops
+	BatchUseropGaslimit *big.Int
 }
 
 func variableNotSetOrIsNil(env string) bool {
@@ -153,6 +159,9 @@ func GetValues() *Values {
 	_ = viper.BindEnv("solver_url")
 	_ = viper.BindEnv("erc4337_bundler_status_timeout")
 	_ = viper.BindEnv("erc4337_bundler_address_whitelist")
+	_ = viper.BindEnv("erc4337_bundler_single_userops_gaslimit")
+	_ = viper.BindEnv("erc4337_bundler_batch_userops_gaslimit")
+	_ = viper.BindEnv("erc4337_bundler_enable_gaslimits")
 
 	// Validate required variables
 	if variableNotSetOrIsNil("erc4337_bundler_eth_client_url") {
@@ -217,6 +226,19 @@ func GetValues() *Values {
 	solverURL := viper.GetString("solver_url")
 	useropStatusWaitTime := viper.GetDuration("erc4337_bundler_status_timeout")
 	whitelistedAddresses := envArrayToStringSlice(viper.GetString("erc4337_bundler_address_whitelist"))
+	isGasLimitChecksEnabled := viper.GetBool("erc4337_bundler_enable_gaslimits")
+	singleUseropLimit := big.NewInt(viper.GetInt64("erc4337_bundler_single_userops_gaslimit"))
+	batchUserOpsLimit := big.NewInt(viper.GetInt64("erc4337_bundler_batch_userops_gaslimit"))
+
+	if isGasLimitChecksEnabled {
+		if singleUseropLimit.Int64() <= 0 {
+			panic("Fatal config error: erc4337_bundler_single_userops_gaslimit must be a valid number")
+		}
+
+		if batchUserOpsLimit.Int64() <= 0 {
+			panic("Fatal config error: erc4337_bundler_batch_userops_gaslimit must be a valid number")
+		}
+	}
 
 	return &Values{
 		PrivateKey:                   privateKey,
@@ -248,6 +270,9 @@ func GetValues() *Values {
 		SolverURL:                    solverURL,
 		StatusTimeout:                useropStatusWaitTime,
 		WhiteListedAddresses:         strToAddrs(whitelistedAddresses),
+		EnableGasLimitChecks:         isGasLimitChecksEnabled,
+		SingleUseropGaslimit:         singleUseropLimit,
+		BatchUseropGaslimit:          batchUserOpsLimit,
 	}
 }
 

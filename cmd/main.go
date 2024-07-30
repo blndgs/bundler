@@ -138,7 +138,8 @@ func main() {
 		batch.MaintainGasLimit(values.MaxBatchGasLimit),
 		solver.ValidateIntents(),
 		solver.SolveIntents(),
-		relayer.SendUserOperation(),
+		relayer.LimitGas(values),
+		relayer.SendUserOperation(values),
 		rep.IncOpsIncluded(),
 		check.Clean(),
 	)

@@ -2,17 +2,20 @@ package srv
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"math/big"
 	"time"
 
+	"github.com/blndgs/bundler/conf"
 	"github.com/blndgs/bundler/utils"
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/go-logr/logr"
+	multierror "github.com/hashicorp/go-multierror"
 	"github.com/puzpuzpuz/xsync/v3"
 	"github.com/stackup-wallet/stackup-bundler/pkg/entrypoint"
 	"github.com/stackup-wallet/stackup-bundler/pkg/entrypoint/reverts"
@@ -92,7 +95,7 @@ func (r *Relayer) SetWaitTimeout(timeout time.Duration) {
 
 // SendUserOperation returns a BatchHandler that is used by the Bundler to send batches in a regular EOA
 // transaction.
-func (r *Relayer) SendUserOperation() modules.BatchHandlerFunc {
+func (r *Relayer) SendUserOperation(values *conf.Values) modules.BatchHandlerFunc {
 	return func(ctx *modules.BatchHandlerCtx) error {
 
 		_, span := utils.GetTracer().
@@ -136,6 +139,34 @@ func (r *Relayer) SendUserOperation() modules.BatchHandlerFunc {
 			} else {
 				opts.GasLimit = est
 				opts.GasPrice = ctx.GasPrice
+
+				if big.NewInt(0).SetUint64(est).Cmp(values.BatchUseropGaslimit) == 1 {
+
+					err := errors.New("batch gas too high")
+
+					for _, op := range ctx.Batch {
+
+						currentOpHash, unsolvedOpHash := utils.GetUserOpHash(op, r.ep, r.chainID)
+
+						r.m.Compute(unsolvedOpHash, func(oldValue OpHashes, loaded bool) (newValue OpHashes, delete bool) {
+							return OpHashes{
+								Error:  multierror.Append(oldValue.Error, err),
+								Solved: currentOpHash,
+							}, false
+						})
+
+						span.RecordError(err)
+						span.SetStatus(codes.Error, err.Error())
+					}
+
+					utils.DropAllUserOps(ctx, err.Error())
+
+					r.logger.WithValues(
+						"batch_userop_gas_limit", values.BatchUseropGaslimit.Int64(),
+						"current_userop_gas_limit", est).
+						Error(err, "batch gas too high for this transaction")
+
+				}
 				break
 			}
 		}
