@@ -112,8 +112,10 @@ func SimulateTxWithTenderly(cfg *conf.Values,
 				return err
 			}
 
-			// safe to ignore err
-			req, _ := http.NewRequest(http.MethodPost, cfg.EthClientUrl, b)
+			req, err := http.NewRequest(http.MethodPost, cfg.EthClientUrl, b)
+			if err != nil {
+				return err
+			}
 
 			req.Header.Add("Content-Type", "application/json")
 			req.Header.Add("Accept", "application/json")
