@@ -14,7 +14,7 @@ jobs:
 
     steps:
       - name: Check out code
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
 
       - name: Enforce module version
         uses: adelowo/enforce-gomod-version@v0.2.0
@@ -31,8 +31,30 @@ jobs:
             echo "Not running on a pull request"
           fi
 
+      - name: Determine Environment Prefix
+        id: env_prefix
+        run: |
+          BRANCH=${{ github.base_ref }}  # This is set for pull requests
+          [ -z "$BRANCH" ] && BRANCH=${{ github.ref_name }}  # Fallback to current branch if not a pull request
+          PREFIX=$(echo $BRANCH | awk -F'-' '{print toupper($1)}')  # Extract prefix and convert to upper case
+          echo "PREFIX=$PREFIX" >> $GITHUB_ENV
+          echo "PREFIX=$PREFIX"
+
       - name: Run Tests
         run: make test
+
+      - name: Run Integration Tests
+        env:
+          TEST_RPC_URL: ${{ secrets[format('{0}_ERC4337_BUNDLER_ETH_CLIENT_URL', env.PREFIX)] }}
+        run: make test-integration
+
+  deploy:
+    name: Deploy Image and Env Variables
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/'))
+    steps:
+      - uses: actions/checkout@v4
 
       - name: Determine Environment Prefix
         id: env_prefix
@@ -67,29 +89,6 @@ jobs:
           else
               echo "Image already exists, proceding..."
           fi
-
-  deploy:
-    name: Deploy Image and Env Variables
-    needs: build
-    runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/'))
-    steps:
-      - name: Determine Environment Prefix
-        id: env_prefix
-        run: |
-          BRANCH=${{ github.base_ref }}  # This is set for pull requests
-          [ -z "$BRANCH" ] && BRANCH=${{ github.ref_name }}  # Fallback to current branch if not a pull request
-          PREFIX=$(echo $BRANCH | awk -F'-' '{print toupper($1)}')  # Extract prefix and convert to upper case
-          echo "PREFIX=$PREFIX" >> $GITHUB_ENV
-          echo "PREFIX=$PREFIX"
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v1
-        with:
-          aws-access-key-id: ${{ secrets[format('{0}_AWS_ACCESS_KEY_ID', env.PREFIX)] }}
-          aws-secret-access-key: ${{ secrets[format('{0}_AWS_SECRET_ACCESS_KEY', env.PREFIX)] }}
-          aws-region: ${{ secrets[format('{0}_AWS_REGION', env.PREFIX)] }}
-      - uses: actions/checkout@v2
 
       - name: Change task definition
         id: change_task_definition
