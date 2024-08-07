@@ -15,14 +15,15 @@ import (
 )
 
 const (
-	CollectorTracer    = "bundlerCollectorTracer"
-	ExecutorTracer     = "bundlerExecutorTracer"
-	DataDir            = "/tmp/balloondogs_db"
-	EntrypointAddrV060 = "0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789"
-	OpLookupLimit      = 2000
-	MaxBatchGasLimit   = 12000000
-	MaxVerificationGas = 6000000
-	MaxTTLSeconds      = 180
+	CollectorTracer          = "bundlerCollectorTracer"
+	ExecutorTracer           = "bundlerExecutorTracer"
+	DataDir                  = "/tmp/balloondogs_db"
+	EntrypointAddrV060       = "0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789"
+	OpLookupLimit            = 2000
+	MaxBatchGasLimit         = 12000000
+	MaxVerificationGas       = 6000000
+	MaxTTLSeconds            = 180
+	defaultSimulationTimeout = time.Minute
 )
 
 type Values struct {
@@ -56,6 +57,9 @@ type Values struct {
 	OTELCollectorHeaders  map[string]string
 	OTELCollectorEndpoint string
 	OTELInsecureMode      bool
+
+	SimulationEnabled bool
+	SimulationTimeout time.Duration
 }
 
 func variableNotSetOrIsNil(env string) bool {
@@ -110,6 +114,8 @@ func GetValues() *Values {
 	viper.SetDefault("erc4337_bundler_native_bundler_executor_tracer", ExecutorTracer)
 	viper.SetDefault("erc4337_bundler_status_timeout", time.Second*300)
 	viper.SetDefault("erc4337_bundler_address_whitelist", "")
+	viper.SetDefault("erc4337_bundler_tenderly_enable_simulation", true)
+	viper.SetDefault("erc4337_bundler_simulation_timeout", defaultSimulationTimeout)
 
 	// Read in from .env file if available
 	viper.SetConfigName(".env")
@@ -153,6 +159,10 @@ func GetValues() *Values {
 	_ = viper.BindEnv("solver_url")
 	_ = viper.BindEnv("erc4337_bundler_status_timeout")
 	_ = viper.BindEnv("erc4337_bundler_address_whitelist")
+	_ = viper.BindEnv("erc4337_bundler_tenderly_enable_simulation")
+	_ = viper.BindEnv("erc4337_bundler_tenderly_url")
+	_ = viper.BindEnv("erc4337_bundler_tenderly_access_key")
+	_ = viper.BindEnv("erc4337_bundler_simulation_timeout")
 
 	// Validate required variables
 	if variableNotSetOrIsNil("erc4337_bundler_eth_client_url") {
@@ -217,6 +227,8 @@ func GetValues() *Values {
 	solverURL := viper.GetString("solver_url")
 	useropStatusWaitTime := viper.GetDuration("erc4337_bundler_status_timeout")
 	whitelistedAddresses := envArrayToStringSlice(viper.GetString("erc4337_bundler_address_whitelist"))
+	isSimulationEnabled := viper.GetBool("erc4337_bundler_tenderly_enable_simulation")
+	simulationTimeout := viper.GetDuration("erc4337_bundler_simulation_timeout")
 
 	return &Values{
 		PrivateKey:                   privateKey,
@@ -248,6 +260,8 @@ func GetValues() *Values {
 		SolverURL:                    solverURL,
 		StatusTimeout:                useropStatusWaitTime,
 		WhiteListedAddresses:         strToAddrs(whitelistedAddresses),
+		SimulationEnabled:            isSimulationEnabled,
+		SimulationTimeout:            simulationTimeout,
 	}
 }
 

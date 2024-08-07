@@ -16,6 +16,9 @@ build:
 test:
 	$(GOTEST) -v ./...
 
+test-integration:
+	$(GOTEST) -v ./... -tags integration
+
 clean:
 	$(GOCLEAN)
 	rm -f $(BINARY_NAME)
