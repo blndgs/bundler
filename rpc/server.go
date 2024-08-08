@@ -33,14 +33,14 @@ func NewRPCServer(values *conf.Values, logger logr.Logger, relayer *srv.Relayer,
 	var teardown = func() {}
 
 	if values.OTELIsEnabled {
-		teardown = initTracer(&options{
-			ServiceName:  values.OTELServiceName,
-			CollectorUrl: values.OTELCollectorUrl,
+		teardown = initOTELCapabilities(&options{
+			ServiceName:  values.ServiceName,
+			CollectorUrl: values.OTELCollectorEndpoint,
 			InsecureMode: true,
 			ChainID:      chainID,
 			Address:      common.HexToAddress(values.Beneficiary),
-		})
-		r.Use(otelgin.Middleware(values.OTELServiceName))
+		}, logger)
+		r.Use(otelgin.Middleware(values.ServiceName))
 	}
 
 	r.Use(
@@ -54,7 +54,8 @@ func NewRPCServer(values *conf.Values, logger logr.Logger, relayer *srv.Relayer,
 	})
 
 	handlers := []gin.HandlerFunc{
-		ExtERC4337Controller(relayer.GetOpHashes(), rpcAdapter, rpcClient, ethClient, values),
+		ExtERC4337Controller(relayer.GetOpHashes(), rpcAdapter, rpcClient,
+			ethClient, values, logger),
 		jsonrpc.WithOTELTracerAttributes(),
 	}
 

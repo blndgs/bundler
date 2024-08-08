@@ -7,6 +7,7 @@ import (
 	"math/big"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -37,6 +38,10 @@ import (
 
 func main() {
 	values := conf.GetValues()
+
+	if strings.TrimSpace(values.ServiceName) == "" {
+		log.Fatal("please provide a valid service name")
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -83,6 +88,8 @@ func main() {
 		log.Fatal(err)
 	}
 
+	stdLogger := logger.NewZeroLogr(values.DebugMode)
+
 	validator := validations.New(
 		db,
 		rpcClient,
@@ -93,18 +100,19 @@ func main() {
 		false, // isRIP7212Supported
 		values.NativeBundlerCollectorTracer,
 		conf.NewReputationConstantsFromEnv(),
+		stdLogger,
 	)
 
 	exp := expire.New(time.Second * values.MaxOpTTL)
 
 	rep := entities.New(db, eth, conf.NewReputationConstantsFromEnv())
-	stdLogger := logger.NewZeroLogr()
 
 	relayer := srv.New(values.SupportedEntryPoints[0], eoa, eth, chain, beneficiary, stdLogger)
 
-	println("solver URL:", values.SolverURL)
-	solver := solution.New(values.SolverURL)
-	if err := solution.ReportSolverHealth(values.SolverURL); err != nil {
+	stdLogger.Info("Using solver url", "url", values.SolverURL)
+
+	solver := solution.New(values.SolverURL, stdLogger, relayer.GetOpHashes(), values.SupportedEntryPoints[0], chain)
+	if err := solver.ReportSolverHealth(values.SolverURL); err != nil {
 		log.Fatal(err)
 	}
 
@@ -114,11 +122,23 @@ func main() {
 
 	check := validator.ToStandaloneCheck()
 
+	whitelistHandler, whitelistCleanupFn := srv.CheckSenderWhitelist(db, values.WhiteListedAddresses,
+		stdLogger, relayer.GetOpHashes(),
+		values.SupportedEntryPoints[0], chain)
+
+	if whitelistHandler == nil {
+		stdLogger.Info("could not set up sender whitelist middleware")
+		os.Exit(1)
+	}
+
 	bundlerClient.UseModules(
+		whitelistHandler,
 		exp.DropExpired(),
 		batch.SortByNonce(),
 		batch.MaintainGasLimit(values.MaxBatchGasLimit),
+		solver.ValidateIntents(),
 		solver.SolveIntents(),
+		srv.SimulateTxWithTenderly(values, eth, stdLogger, relayer.GetOpHashes(), values.SupportedEntryPoints[0], chain),
 		relayer.SendUserOperation(),
 		rep.IncOpsIncluded(),
 		check.Clean(),
@@ -145,6 +165,7 @@ func main() {
 	// Wait for the context to be canceled
 	<-ctx.Done()
 	log.Println("Shutting down...")
+	whitelistCleanupFn()
 }
 
 func createERC4337Client(mem *mempool.Mempool, values *conf.Values, chainID *big.Int,

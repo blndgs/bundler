@@ -15,15 +15,15 @@ import (
 )
 
 const (
-	CollectorTracer           = "bundlerCollectorTracer"
-	ExecutorTracer            = "bundlerExecutorTracer"
-	DefaultBundlerServiceName = "bundler"
-	DataDir                   = "/tmp/balloondogs_db"
-	EntrypointAddrV060        = "0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789"
-	OpLookupLimit             = 2000
-	MaxBatchGasLimit          = 12000000
-	MaxVerificationGas        = 6000000
-	MaxTTLSeconds             = 180
+	CollectorTracer          = "bundlerCollectorTracer"
+	ExecutorTracer           = "bundlerExecutorTracer"
+	DataDir                  = "/tmp/balloondogs_db"
+	EntrypointAddrV060       = "0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789"
+	OpLookupLimit            = 2000
+	MaxBatchGasLimit         = 12000000
+	MaxVerificationGas       = 6000000
+	MaxTTLSeconds            = 180
+	defaultSimulationTimeout = time.Minute
 )
 
 type Values struct {
@@ -43,11 +43,6 @@ type Values struct {
 	EthBuilderUrls               []string
 	BlocksInTheFuture            int
 	StatusTimeout                time.Duration
-	OTELIsEnabled                bool
-	OTELServiceName              string
-	OTELCollectorHeaders         map[string]string
-	OTELCollectorUrl             string
-	OTELInsecureMode             bool
 	AltMempoolIPFSGateway        string
 	AltMempoolIds                []string
 	IsOpStackNetwork             bool
@@ -55,6 +50,16 @@ type Values struct {
 	DebugMode                    bool
 	GinMode                      string
 	SolverURL                    string
+	// If empty, all addresses will be accepted
+	WhiteListedAddresses  []common.Address
+	ServiceName           string
+	OTELIsEnabled         bool
+	OTELCollectorHeaders  map[string]string
+	OTELCollectorEndpoint string
+	OTELInsecureMode      bool
+
+	SimulationEnabled bool
+	SimulationTimeout time.Duration
 }
 
 func variableNotSetOrIsNil(env string) bool {
@@ -108,6 +113,9 @@ func GetValues() *Values {
 	viper.SetDefault("erc4337_bundler_native_bundler_collector_tracer", CollectorTracer)
 	viper.SetDefault("erc4337_bundler_native_bundler_executor_tracer", ExecutorTracer)
 	viper.SetDefault("erc4337_bundler_status_timeout", time.Second*300)
+	viper.SetDefault("erc4337_bundler_address_whitelist", "")
+	viper.SetDefault("erc4337_bundler_tenderly_enable_simulation", true)
+	viper.SetDefault("erc4337_bundler_simulation_timeout", defaultSimulationTimeout)
 
 	// Read in from .env file if available
 	viper.SetConfigName(".env")
@@ -138,7 +146,7 @@ func GetValues() *Values {
 	_ = viper.BindEnv("erc4337_bundler_eth_builder_urls")
 	_ = viper.BindEnv("erc4337_bundler_blocks_in_the_future")
 	_ = viper.BindEnv("erc4337_bundler_otel_is_enabled")
-	_ = viper.BindEnv("erc4337_bundler_otel_service_name")
+	_ = viper.BindEnv("erc4337_bundler_service_name")
 	_ = viper.BindEnv("erc4337_bundler_otel_collector_headers")
 	_ = viper.BindEnv("erc4337_bundler_otel_collector_url")
 	_ = viper.BindEnv("erc4337_bundler_otel_insecure_mode")
@@ -150,6 +158,11 @@ func GetValues() *Values {
 	_ = viper.BindEnv("erc4337_bundler_gin_mode")
 	_ = viper.BindEnv("solver_url")
 	_ = viper.BindEnv("erc4337_bundler_status_timeout")
+	_ = viper.BindEnv("erc4337_bundler_address_whitelist")
+	_ = viper.BindEnv("erc4337_bundler_tenderly_enable_simulation")
+	_ = viper.BindEnv("erc4337_bundler_tenderly_url")
+	_ = viper.BindEnv("erc4337_bundler_tenderly_access_key")
+	_ = viper.BindEnv("erc4337_bundler_simulation_timeout")
 
 	// Validate required variables
 	if variableNotSetOrIsNil("erc4337_bundler_eth_client_url") {
@@ -173,12 +186,6 @@ func GetValues() *Values {
 		if variableNotSetOrIsNil("erc4337_bundler_eth_builder_urls") {
 			panic("Fatal config error: erc4337_bundler_eth_builder_urls not set")
 		}
-	}
-
-	// Validate O11Y variables
-	if viper.IsSet("erc4337_bundler_otel_service_name") &&
-		variableNotSetOrIsNil("erc4337_bundler_otel_collector_url") {
-		panic("Fatal config error: erc4337_bundler_otel_service_name is set without a collector URL")
 	}
 
 	// Validate Alternative mempool variables
@@ -207,7 +214,7 @@ func GetValues() *Values {
 	ethBuilderUrls := envArrayToStringSlice(viper.GetString("erc4337_bundler_eth_builder_urls"))
 	blocksInTheFuture := viper.GetInt("erc4337_bundler_blocks_in_the_future")
 	otelIsEnabled := viper.GetBool("erc4337_bundler_otel_is_enabled")
-	otelServiceName := viper.GetString("erc4337_bundler_otel_service_name")
+	serviceName := viper.GetString("erc4337_bundler_service_name")
 	otelCollectorHeader := envKeyValStringToMap(viper.GetString("erc4337_bundler_otel_collector_headers"))
 	otelCollectorUrl := viper.GetString("erc4337_bundler_otel_collector_url")
 	otelInsecureMode := viper.GetBool("erc4337_bundler_otel_insecure_mode")
@@ -219,6 +226,9 @@ func GetValues() *Values {
 	ginMode := viper.GetString("erc4337_bundler_gin_mode")
 	solverURL := viper.GetString("solver_url")
 	useropStatusWaitTime := viper.GetDuration("erc4337_bundler_status_timeout")
+	whitelistedAddresses := envArrayToStringSlice(viper.GetString("erc4337_bundler_address_whitelist"))
+	isSimulationEnabled := viper.GetBool("erc4337_bundler_tenderly_enable_simulation")
+	simulationTimeout := viper.GetDuration("erc4337_bundler_simulation_timeout")
 
 	return &Values{
 		PrivateKey:                   privateKey,
@@ -237,9 +247,9 @@ func GetValues() *Values {
 		EthBuilderUrls:               ethBuilderUrls,
 		BlocksInTheFuture:            blocksInTheFuture,
 		OTELIsEnabled:                otelIsEnabled,
-		OTELServiceName:              otelServiceName,
+		ServiceName:                  serviceName,
 		OTELCollectorHeaders:         otelCollectorHeader,
-		OTELCollectorUrl:             otelCollectorUrl,
+		OTELCollectorEndpoint:        otelCollectorUrl,
 		OTELInsecureMode:             otelInsecureMode,
 		AltMempoolIPFSGateway:        altMempoolIPFSGateway,
 		AltMempoolIds:                altMempoolIds,
@@ -249,6 +259,9 @@ func GetValues() *Values {
 		GinMode:                      ginMode,
 		SolverURL:                    solverURL,
 		StatusTimeout:                useropStatusWaitTime,
+		WhiteListedAddresses:         strToAddrs(whitelistedAddresses),
+		SimulationEnabled:            isSimulationEnabled,
+		SimulationTimeout:            simulationTimeout,
 	}
 }
 
@@ -265,4 +278,14 @@ func NewReputationConstantsFromEnv() *entities.ReputationConstants {
 		ThrottlingSlack:                10,
 		BanSlack:                       50,
 	}
+}
+
+func strToAddrs(s []string) []common.Address {
+	a := make([]common.Address, 0, len(s))
+
+	for _, v := range s {
+		a = append(a, common.HexToAddress(v))
+	}
+
+	return a
 }
