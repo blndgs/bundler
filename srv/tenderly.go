@@ -73,17 +73,7 @@ func SimulateTxWithTenderly(cfg *conf.Values,
 					return err
 				}
 
-				outgoingAssetChanges := resp.Result.AssetChanges[0]
-
-				if common.HexToAddress(outgoingAssetChanges.From).Hex() != userop.Sender.Hex() {
-					err = errors.New("first outward transaction does not belong to the userop sender")
-
-					logger.Error(err, "unexpected asset_changes structure")
-
-					computeHashFn(unsolvedOpHash, currentOpHash, err)
-					return err
-				}
-
+				// only check the last TX to make sure it is being deposited to the userop sender
 				incomingAssetChanges := resp.Result.AssetChanges[len(resp.Result.AssetChanges)-1]
 
 				if common.HexToAddress(incomingAssetChanges.To).Hex() != userop.Sender.Hex() {
