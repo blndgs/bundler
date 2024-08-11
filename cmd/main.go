@@ -138,7 +138,7 @@ func main() {
 		batch.MaintainGasLimit(values.MaxBatchGasLimit),
 		solver.ValidateIntents(),
 		solver.SolveIntents(),
-		srv.SimulateTxWithTenderly(values, eth, stdLogger, relayer.GetOpHashes(), values.SupportedEntryPoints[0], chain),
+		// srv.SimulateTxWithTenderly(values, eth, stdLogger, relayer.GetOpHashes(), values.SupportedEntryPoints[0], chain),
 		relayer.SendUserOperation(),
 		rep.IncOpsIncluded(),
 		check.Clean(),
