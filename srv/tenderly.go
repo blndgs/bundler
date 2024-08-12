@@ -8,14 +8,17 @@ import (
 	"errors"
 	"math/big"
 	"net/http"
+	"strings"
 
 	"github.com/blndgs/bundler/conf"
 	"github.com/blndgs/bundler/utils"
+	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/go-logr/logr"
 	multierror "github.com/hashicorp/go-multierror"
 	"github.com/puzpuzpuz/xsync/v3"
+	"github.com/stackup-wallet/stackup-bundler/pkg/entrypoint"
 	"github.com/stackup-wallet/stackup-bundler/pkg/modules"
 	"github.com/stackup-wallet/stackup-bundler/pkg/userop"
 	"golang.org/x/sync/errgroup"
@@ -97,10 +100,20 @@ func doSimulateUserop(userop *userop.UserOperation,
 	entrypointAddr common.Address,
 	cfg *conf.Values) (simulationResponse, error) {
 
+	parsed, err := abi.JSON(strings.NewReader(entrypoint.EntrypointABI))
+	if err != nil {
+		return simulationResponse{}, err
+	}
+
+	calldata, err := parsed.Pack("handleOps", []entrypoint.UserOperation{entrypoint.UserOperation(*userop)}, common.HexToAddress(cfg.Beneficiary))
+	if err != nil {
+		return simulationResponse{}, err
+	}
+
 	var data = simulationRequest{
-		Data: "0x" + hex.EncodeToString(userop.CallData),
-		To:   userop.Sender.Hex(),
-		From: entrypointAddr.Hex(),
+		Data: "0x" + hex.EncodeToString(calldata),
+		From: userop.Sender.Hex(),
+		To:   entrypointAddr.Hex(),
 	}
 
 	r := tenderlySimulationRequest{
