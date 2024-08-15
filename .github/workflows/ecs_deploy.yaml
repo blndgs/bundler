@@ -106,6 +106,7 @@ jobs:
           VAR_ERC4337_BUNDLER_OTEL_COLLECTOR_URL: ${{ secrets.OTEL_EXPORTER_OTLP_ENDPOINT }}
           VAR_ERC4337_BUNDLER_OTEL_COLLECTOR_HEADERS: ${{ secrets.OTEL_EXPORTER_OTLP_HEADERS }}
           VAR_ERC4337_ERC4337_BUNDLER_SERVICE_NAME: ${{ vars[format('{0}_BUNDLER_SERVICE_NAME', env.PREFIX)] }}
+          VAR_ERC4337_BUNDLER_TENDERLY_ENABLE_SIMULATION: ${{ vars[format('{0}_BUNDLER_TENDERLY_ENABLE_SIMULATION', env.PREFIX)] }}
         run: |
           cp -p .github/task-definition.json task-definition.json
           sed -i "s+AWS_REGION+${VAR_AWS_REGION}+g" task-definition.json
@@ -121,6 +122,7 @@ jobs:
           sed -i "s+VAR_ERC4337_BUNDLER_OTEL_COLLECTOR_URL+${VAR_ERC4337_BUNDLER_OTEL_COLLECTOR_URL}+g" task-definition.json
           sed -i "s+VAR_ERC4337_BUNDLER_OTEL_COLLECTOR_HEADERS+${VAR_ERC4337_BUNDLER_OTEL_COLLECTOR_HEADERS}+g" task-definition.json
           sed -i "s+VAR_ERC4337_ERC4337_BUNDLER_SERVICE_NAME+${VAR_ERC4337_ERC4337_BUNDLER_SERVICE_NAME}+g" task-definition.json
+          sed -i "s+VAR_ERC4337_BUNDLER_TENDERLY_ENABLE_SIMULATION+${VAR_ERC4337_BUNDLER_TENDERLY_ENABLE_SIMULATION}+g" task-definition.json
           cat task-definition.json
 
       - name: Deploy Amazon ECS task definition
