@@ -4,7 +4,7 @@ on:
   pull_request:
     types: [opened, reopened, synchronize]
   push:
-    branches: [main, testnet, live, stage, test_ecs_deploy]
+    branches: [main, testnet, live, stage]
   workflow_dispatch:
 
 jobs:
@@ -37,7 +37,6 @@ jobs:
           BRANCH=${{ github.base_ref }}  # This is set for pull requests
           [ -z "$BRANCH" ] && BRANCH=${{ github.ref_name }}  # Fallback to current branch if not a pull request
           PREFIX=$(echo $BRANCH | awk -F'-' '{print toupper($1)}')  # Extract prefix and convert to upper case
-          if [ "${BRANCH}" = "test_ecs_deploy" ];then PREFIX=MAIN;fi
           echo "PREFIX=$PREFIX" >> $GITHUB_ENV
           echo "PREFIX=$PREFIX"
 
@@ -63,7 +62,6 @@ jobs:
           BRANCH=${{ github.base_ref }}  # This is set for pull requests
           [ -z "$BRANCH" ] && BRANCH=${{ github.ref_name }}  # Fallback to current branch if not a pull request
           PREFIX=$(echo $BRANCH | awk -F'-' '{print toupper($1)}')  # Extract prefix and convert to upper case
-          if [ "${BRANCH}" = "test_ecs_deploy" ];then PREFIX=MAIN;fi
           echo "PREFIX=$PREFIX" >> $GITHUB_ENV
           echo "PREFIX=$PREFIX"
 
