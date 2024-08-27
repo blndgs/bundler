@@ -4,7 +4,7 @@ on:
   pull_request:
     types: [opened, reopened, synchronize]
   push:
-    branches: [main, testnet, live, stage]
+    branches: [main, testnet, live, stage, test_ecs_deploy]
   workflow_dispatch:
 
 jobs:
@@ -107,23 +107,60 @@ jobs:
           VAR_ERC4337_BUNDLER_OTEL_COLLECTOR_HEADERS: ${{ secrets.OTEL_EXPORTER_OTLP_HEADERS }}
           VAR_ERC4337_ERC4337_BUNDLER_SERVICE_NAME: ${{ vars[format('{0}_BUNDLER_SERVICE_NAME', env.PREFIX)] }}
           VAR_ERC4337_BUNDLER_TENDERLY_ENABLE_SIMULATION: ${{ vars[format('{0}_BUNDLER_TENDERLY_ENABLE_SIMULATION', env.PREFIX)] }}
+          FILE_NAME: task-definition.json
         run: |
-          cp -p .github/task-definition.json task-definition.json
-          sed -i "s+AWS_REGION+${VAR_AWS_REGION}+g" task-definition.json
-          sed -i "s+ENV_NAME+${VAR_ENV_NAME}+g" task-definition.json
-          sed -i "s+APP_NAME+${VAR_APP_NAME}+g" task-definition.json
-          sed -i "s+IMAGE+${VAR_IMAGE}+g" task-definition.json
-          sed -i "s+VAR_ERC4337_BUNDLER_ETH_CLIENT_URL+${VAR_ERC4337_BUNDLER_ETH_CLIENT_URL}+g" task-definition.json
-          sed -i "s+VAR_ERC4337_BUNDLER_PRIVATE_KEY+${VAR_ERC4337_BUNDLER_PRIVATE_KEY}+g" task-definition.json
-          sed -i "s+VAR_ERC4337_BUNDLER_MAX_BATCH_GAS_LIMIT+${VAR_ERC4337_BUNDLER_MAX_BATCH_GAS_LIMIT}+g" task-definition.json
-          sed -i "s+VAR_ERC4337_BUNDLER_DEBUG_MODE+${VAR_ERC4337_BUNDLER_DEBUG_MODE}+g" task-definition.json
-          sed -i "s+VAR_SOLVER_URL+${VAR_SOLVER_URL}+g" task-definition.json
-          sed -i "s+VAR_ERC4337_BUNDLER_OTEL_IS_ENABLED+${VAR_ERC4337_BUNDLER_OTEL_IS_ENABLED}+g" task-definition.json
-          sed -i "s+VAR_ERC4337_BUNDLER_OTEL_COLLECTOR_URL+${VAR_ERC4337_BUNDLER_OTEL_COLLECTOR_URL}+g" task-definition.json
-          sed -i "s+VAR_ERC4337_BUNDLER_OTEL_COLLECTOR_HEADERS+${VAR_ERC4337_BUNDLER_OTEL_COLLECTOR_HEADERS}+g" task-definition.json
-          sed -i "s+VAR_ERC4337_ERC4337_BUNDLER_SERVICE_NAME+${VAR_ERC4337_ERC4337_BUNDLER_SERVICE_NAME}+g" task-definition.json
-          sed -i "s+VAR_ERC4337_BUNDLER_TENDERLY_ENABLE_SIMULATION+${VAR_ERC4337_BUNDLER_TENDERLY_ENABLE_SIMULATION}+g" task-definition.json
-          cat task-definition.json
+          cp -p .github/task-definition.json ${FILE_NAME}
+          sed -i "s+AWS_REGION+${VAR_AWS_REGION}+g" ${FILE_NAME}
+          sed -i "s+ENV_NAME+${VAR_ENV_NAME}+g" ${FILE_NAME}
+          sed -i "s+APP_NAME+${VAR_APP_NAME}+g" ${FILE_NAME}
+          sed -i "s+IMAGE+${VAR_IMAGE}+g" ${FILE_NAME}
+          sed -i "s+VAR_ERC4337_BUNDLER_ETH_CLIENT_URL+${VAR_ERC4337_BUNDLER_ETH_CLIENT_URL}+g" ${FILE_NAME}
+          sed -i "s+VAR_ERC4337_BUNDLER_PRIVATE_KEY+${VAR_ERC4337_BUNDLER_PRIVATE_KEY}+g" ${FILE_NAME}
+          sed -i "s+VAR_ERC4337_BUNDLER_MAX_BATCH_GAS_LIMIT+${VAR_ERC4337_BUNDLER_MAX_BATCH_GAS_LIMIT}+g" ${FILE_NAME}
+          sed -i "s+VAR_ERC4337_BUNDLER_DEBUG_MODE+${VAR_ERC4337_BUNDLER_DEBUG_MODE}+g" ${FILE_NAME}
+          sed -i "s+VAR_SOLVER_URL+${VAR_SOLVER_URL}+g" ${FILE_NAME}
+          sed -i "s+VAR_ERC4337_BUNDLER_OTEL_IS_ENABLED+${VAR_ERC4337_BUNDLER_OTEL_IS_ENABLED}+g" ${FILE_NAME}
+          sed -i "s+VAR_ERC4337_BUNDLER_OTEL_COLLECTOR_URL+${VAR_ERC4337_BUNDLER_OTEL_COLLECTOR_URL}+g" ${FILE_NAME}
+          sed -i "s+VAR_ERC4337_BUNDLER_OTEL_COLLECTOR_HEADERS+${VAR_ERC4337_BUNDLER_OTEL_COLLECTOR_HEADERS}+g" ${FILE_NAME}
+          sed -i "s+VAR_ERC4337_ERC4337_BUNDLER_SERVICE_NAME+${VAR_ERC4337_ERC4337_BUNDLER_SERVICE_NAME}+g" ${FILE_NAME}
+          sed -i "s+VAR_ERC4337_BUNDLER_TENDERLY_ENABLE_SIMULATION+${VAR_ERC4337_BUNDLER_TENDERLY_ENABLE_SIMULATION}+g" ${FILE_NAME}
+          cat ${FILE_NAME}
+
+      - name: Change task definition bsc
+        id: change_task_definition_bsc
+        env:
+          VAR_ENV_NAME: ${{ secrets[format('{0}_ENV_NAME', env.PREFIX)] }}
+          VAR_APP_NAME: "bundler"
+          VAR_IMAGE: ${{ secrets[format('{0}_ECR_URL', env.PREFIX)] }}/${{ secrets[format('{0}_AWS_REPOSITORY', env.PREFIX)] }}:${{ github.sha }}
+          VAR_ERC4337_BUNDLER_ETH_CLIENT_URL: ${{ secrets[format('{0}_ERC4337_BUNDLER_BSC_CLIENT_URL', env.PREFIX)] }}
+          VAR_ERC4337_BUNDLER_PRIVATE_KEY: ${{ secrets[format('{0}_ERC4337_BUNDLER_PRIVATE_KEY', env.PREFIX)] }}
+          VAR_ERC4337_BUNDLER_MAX_BATCH_GAS_LIMIT: ${{ secrets[format('{0}_ERC4337_BUNDLER_MAX_BATCH_GAS_LIMIT', env.PREFIX)] }}
+          VAR_ERC4337_BUNDLER_DEBUG_MODE: ${{ secrets[format('{0}_ERC4337_BUNDLER_DEBUG_MODE', env.PREFIX)] }}
+          VAR_SOLVER_URL: ${{ secrets[format('{0}_SOLVER_URL_NEW', env.PREFIX)] }}
+          VAR_AWS_REGION: ${{ secrets[format('{0}_AWS_REGION', env.PREFIX)] }}
+          VAR_ERC4337_BUNDLER_OTEL_IS_ENABLED: true
+          VAR_ERC4337_BUNDLER_OTEL_COLLECTOR_URL: ${{ secrets.OTEL_EXPORTER_OTLP_ENDPOINT }}
+          VAR_ERC4337_BUNDLER_OTEL_COLLECTOR_HEADERS: ${{ secrets.OTEL_EXPORTER_OTLP_HEADERS }}
+          VAR_ERC4337_ERC4337_BUNDLER_SERVICE_NAME: ${{ vars[format('{0}_BUNDLER_SERVICE_NAME', env.PREFIX)] }}
+          VAR_ERC4337_BUNDLER_TENDERLY_ENABLE_SIMULATION: ${{ vars[format('{0}_BUNDLER_TENDERLY_ENABLE_SIMULATION', env.PREFIX)] }}
+          FILE_NAME: task-definition-bsc.json
+        run: |
+          cp -p .github/${FILE_NAME} ${FILE_NAME}
+          sed -i "s+AWS_REGION+${VAR_AWS_REGION}+g" ${FILE_NAME}
+          sed -i "s+ENV_NAME+${VAR_ENV_NAME}+g" ${FILE_NAME}
+          sed -i "s+APP_NAME+${VAR_APP_NAME}+g" ${FILE_NAME}
+          sed -i "s+IMAGE+${VAR_IMAGE}+g" ${FILE_NAME}
+          sed -i "s+VAR_ERC4337_BUNDLER_ETH_CLIENT_URL+${VAR_ERC4337_BUNDLER_ETH_CLIENT_URL}+g" ${FILE_NAME}
+          sed -i "s+VAR_ERC4337_BUNDLER_PRIVATE_KEY+${VAR_ERC4337_BUNDLER_PRIVATE_KEY}+g" ${FILE_NAME}
+          sed -i "s+VAR_ERC4337_BUNDLER_MAX_BATCH_GAS_LIMIT+${VAR_ERC4337_BUNDLER_MAX_BATCH_GAS_LIMIT}+g" ${FILE_NAME}
+          sed -i "s+VAR_ERC4337_BUNDLER_DEBUG_MODE+${VAR_ERC4337_BUNDLER_DEBUG_MODE}+g" ${FILE_NAME}
+          sed -i "s+VAR_SOLVER_URL+${VAR_SOLVER_URL}+g" ${FILE_NAME}
+          sed -i "s+VAR_ERC4337_BUNDLER_OTEL_IS_ENABLED+${VAR_ERC4337_BUNDLER_OTEL_IS_ENABLED}+g" ${FILE_NAME}
+          sed -i "s+VAR_ERC4337_BUNDLER_OTEL_COLLECTOR_URL+${VAR_ERC4337_BUNDLER_OTEL_COLLECTOR_URL}+g" ${FILE_NAME}
+          sed -i "s+VAR_ERC4337_BUNDLER_OTEL_COLLECTOR_HEADERS+${VAR_ERC4337_BUNDLER_OTEL_COLLECTOR_HEADERS}+g" ${FILE_NAME}
+          sed -i "s+VAR_ERC4337_ERC4337_BUNDLER_SERVICE_NAME+${VAR_ERC4337_ERC4337_BUNDLER_SERVICE_NAME}+g" ${FILE_NAME}
+          sed -i "s+VAR_ERC4337_BUNDLER_TENDERLY_ENABLE_SIMULATION+${VAR_ERC4337_BUNDLER_TENDERLY_ENABLE_SIMULATION}+g" ${FILE_NAME}
+          cat ${FILE_NAME}
 
       - name: Deploy Amazon ECS task definition
         uses: aws-actions/amazon-ecs-deploy-task-definition@v1
@@ -131,6 +168,24 @@ jobs:
           cluster: ${{ secrets[format('{0}_ENV_NAME', env.PREFIX)] }}-backend
           service: ${{ secrets[format('{0}_ENV_NAME', env.PREFIX)] }}-bundler
           task-definition: task-definition.json
+          wait-for-service-stability: false
+          wait-for-minutes: 5
+
+      - name: Deploy Amazon ECS task definition to bundler-eth
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v1
+        with:
+          cluster: ${{ secrets[format('{0}_ENV_NAME', env.PREFIX)] }}-backend
+          service: ${{ secrets[format('{0}_ENV_NAME', env.PREFIX)] }}-bundler-eth
+          task-definition: task-definition.json
+          wait-for-service-stability: false
+          wait-for-minutes: 5
+
+      - name: Deploy Amazon ECS task definition to bundler-bsc
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v1
+        with:
+          cluster: ${{ secrets[format('{0}_ENV_NAME', env.PREFIX)] }}-backend
+          service: ${{ secrets[format('{0}_ENV_NAME', env.PREFIX)] }}-bundler-bsc
+          task-definition: task-definition-bsc.json
           wait-for-service-stability: false
           wait-for-minutes: 5
 
