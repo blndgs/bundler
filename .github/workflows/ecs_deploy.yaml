@@ -147,7 +147,7 @@ jobs:
           VAR_ERC4337_BUNDLER_TENDERLY_ENABLE_SIMULATION: ${{ vars[format('{0}_BUNDLER_TENDERLY_ENABLE_SIMULATION', env.PREFIX)] }}
           FILE_NAME: task-definition-bsc.json
         run: |
-          cp -p .github/${FILE_NAME} ${FILE_NAME}
+          cp -p .github/task-definition.json ${FILE_NAME}
           sed -i "s+AWS_REGION+${VAR_AWS_REGION}+g" ${FILE_NAME}
           sed -i "s+ENV_NAME+${VAR_ENV_NAME}+g" ${FILE_NAME}
           sed -i "s+APP_NAME+${VAR_APP_NAME}+g" ${FILE_NAME}
