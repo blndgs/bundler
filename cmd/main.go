@@ -90,6 +90,13 @@ func main() {
 
 	stdLogger := logger.NewZeroLogr(values.DebugMode)
 
+	h, err := os.Hostname()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	stdLogger = stdLogger.WithValues("service", values.ServiceName, "host", h)
+
 	validator := validations.New(
 		db,
 		rpcClient,
