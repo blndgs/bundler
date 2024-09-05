@@ -14,6 +14,11 @@ import (
 	"github.com/stackup-wallet/stackup-bundler/pkg/signer"
 )
 
+var (
+	GitCommitID  string
+	ModelVersion string
+)
+
 const (
 	CollectorTracer          = "bundlerCollectorTracer"
 	ExecutorTracer           = "bundlerExecutorTracer"
@@ -288,4 +293,20 @@ func strToAddrs(s []string) []common.Address {
 	}
 
 	return a
+}
+
+// SetLDFlags set LD Flags from main.
+func SetLDFlags(commitID, modelVersion string) {
+	GitCommitID = commitID
+	ModelVersion = modelVersion
+}
+
+// GetGitCommitID get commit id.
+func GetGitCommitID() string {
+	return GitCommitID
+}
+
+// GetModelVersion get model version.
+func GetModelVersion() string {
+	return ModelVersion
 }

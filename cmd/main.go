@@ -36,7 +36,13 @@ import (
 	"github.com/blndgs/bundler/validations"
 )
 
+// build time LDFlags
+var (
+	CommitID, ModelVersion string
+)
+
 func main() {
+	conf.SetLDFlags(CommitID, ModelVersion)
 	values := conf.GetValues()
 
 	if strings.TrimSpace(values.ServiceName) == "" {
