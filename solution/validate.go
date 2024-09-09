@@ -3,18 +3,17 @@ package solution
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
 	"unsafe"
 
-	multierror "github.com/hashicorp/go-multierror"
-	pkgerrors "github.com/pkg/errors"
-
 	"github.com/blndgs/bundler/srv"
 	"github.com/blndgs/bundler/utils"
 	"github.com/blndgs/model"
 	"github.com/goccy/go-json"
+	pkgerrors "github.com/pkg/errors"
 	"github.com/stackup-wallet/stackup-bundler/pkg/modules"
 	"github.com/stackup-wallet/stackup-bundler/pkg/userop"
 	"golang.org/x/sync/errgroup"
@@ -101,7 +100,7 @@ func (ei *IntentsHandler) sendToSolverForValidation(
 
 				ei.txHashes.Compute(unsolvedOpHash, func(oldValue srv.OpHashes, loaded bool) (newValue srv.OpHashes, delete bool) {
 					return srv.OpHashes{
-						Error:  multierror.Append(oldValue.Error, err),
+						Error:  errors.Join(oldValue.Error, err),
 						Solved: currentOpHash,
 					}, false
 				})

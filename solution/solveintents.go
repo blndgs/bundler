@@ -16,6 +16,7 @@ package solution
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"math/big"
@@ -30,8 +31,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/go-logr/logr"
 	"github.com/goccy/go-json"
-	multierror "github.com/hashicorp/go-multierror"
-	"github.com/pkg/errors"
+	pkgerrors "github.com/pkg/errors"
 	"github.com/puzpuzpuz/xsync/v3"
 
 	pb "github.com/blndgs/model/gen/go/proto/v1"
@@ -133,7 +133,7 @@ func (ei *IntentsHandler) SolveIntents() modules.BatchHandlerFunc {
 		computeHashFn := func(unsolvedOpHash, currentOpHash string, err error) {
 			ei.txHashes.Compute(unsolvedOpHash, func(oldValue srv.OpHashes, loaded bool) (newValue srv.OpHashes, delete bool) {
 				return srv.OpHashes{
-					Error:  multierror.Append(oldValue.Error, err),
+					Error:  errors.Join(oldValue.Error, err),
 					Solved: currentOpHash,
 				}, false
 			})
@@ -166,7 +166,7 @@ func (ei *IntentsHandler) SolveIntents() modules.BatchHandlerFunc {
 				ctx.MarkOpIndexForRemoval(int(batchIndex), string("intent uo not solved:"+opExt.ProcessingStatus.String()))
 				ei.logger.Info("Solver dropping ops", "status", opExt.ProcessingStatus, "body", body.UserOps[idx].String())
 
-				err := errors.Errorf("unknown processing status: %s", opExt.ProcessingStatus)
+				err := pkgerrors.Errorf("unknown processing status: %s", opExt.ProcessingStatus)
 				computeHashFn(unsolvedOpHash, currentOpHash, err)
 
 			case pb.ProcessingStatus_PROCESSING_STATUS_SOLVED:
@@ -182,7 +182,7 @@ func (ei *IntentsHandler) SolveIntents() modules.BatchHandlerFunc {
 				ctx.Batch[batchIndex].MaxPriorityFeePerGas.Set(body.UserOps[idx].MaxPriorityFeePerGas)
 
 			default:
-				err := errors.Errorf("unknown processing status: %s", opExt.ProcessingStatus)
+				err := pkgerrors.Errorf("unknown processing status: %s", opExt.ProcessingStatus)
 
 				ei.logger.Error(err, "unknown processing status")
 
