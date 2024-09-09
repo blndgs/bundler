@@ -2,6 +2,7 @@ package srv
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"math/big"
@@ -13,6 +14,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/go-logr/logr"
+	multierror "github.com/hashicorp/go-multierror"
 	"github.com/puzpuzpuz/xsync/v3"
 	"github.com/stackup-wallet/stackup-bundler/pkg/entrypoint"
 	"github.com/stackup-wallet/stackup-bundler/pkg/entrypoint/reverts"
@@ -120,15 +122,39 @@ func (r *Relayer) SendUserOperation() modules.BatchHandlerFunc {
 			attribute.Int64("wait_timeout", int64(r.waitTimeout)),
 		)
 
+		var computeOPHashes = func(err error, hash common.Hash) {
+
+			for _, op := range ctx.Batch {
+
+				currentOpHash, unsolvedOpHash := utils.GetUserOpHash(op, r.ep, r.chainID)
+
+				r.m.Compute(unsolvedOpHash, func(oldValue OpHashes, loaded bool) (newValue OpHashes, delete bool) {
+
+					var mergedErr error
+					if err != nil {
+						mergedErr = multierror.Append(oldValue.Error, err)
+					}
+
+					return OpHashes{
+						Error:  mergedErr,
+						Solved: currentOpHash,
+						Trx:    hash,
+					}, false
+				})
+			}
+		}
+
 		// Estimate gas for handleOps() and drop all userOps that cause unexpected reverts.
 		for len(ctx.Batch) > 0 {
 			est, revert, err := estimateHandleOpsGas(&opts)
 			if revert != nil {
+				computeOPHashes(errors.New(revert.Reason), common.Hash{})
 				ctx.MarkOpIndexForRemoval(revert.OpIndex, revert.Reason)
 			} else if err != nil {
 				r.logger.Error(err, "failed to estimate gas for handleOps")
 
 				err = fmt.Errorf("failed to estimate gas for handleOps likely not enough gas: %w", err)
+				computeOPHashes(err, common.Hash{})
 				ctx.MarkOpIndexForRemoval(0, err.Error())
 
 				span.RecordError(err)
@@ -148,23 +174,12 @@ func (r *Relayer) SendUserOperation() modules.BatchHandlerFunc {
 
 				span.RecordError(err)
 				span.SetStatus(codes.Error, err.Error())
+				computeOPHashes(err, common.Hash{})
 				return err
 			} else {
 				txHash := txn.Hash().String()
 				ctx.Data["txn_hash"] = txHash
-				// Store the transaction hash for each userOp in the batch.
-				for _, op := range ctx.Batch {
-
-					currentOpHash, unsolvedOpHash := utils.GetUserOpHash(op, r.ep, r.chainID)
-
-					r.m.Compute(unsolvedOpHash, func(oldValue OpHashes, loaded bool) (newValue OpHashes, delete bool) {
-						return OpHashes{
-							Error:  oldValue.Error,
-							Solved: currentOpHash,
-							Trx:    txn.Hash(),
-						}, false
-					})
-				}
+				computeOPHashes(nil, txn.Hash())
 			}
 		}
 
