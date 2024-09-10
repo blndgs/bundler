@@ -10,7 +10,6 @@ import (
 	"github.com/dgraph-io/badger/v3"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/go-logr/logr"
-	multierror "github.com/hashicorp/go-multierror"
 	"github.com/puzpuzpuz/xsync/v3"
 	"github.com/stackup-wallet/stackup-bundler/pkg/modules"
 )
@@ -81,7 +80,7 @@ func CheckSenderWhitelist(db *badger.DB,
 
 					txHashes.Compute(unsolvedOpHash, func(oldValue OpHashes, loaded bool) (newValue OpHashes, delete bool) {
 						return OpHashes{
-							Error:  multierror.Append(oldValue.Error, errors.New("sender not found in whitelist")),
+							Error:  errors.Join(oldValue.Error, errors.New("sender not found in whitelist")),
 							Solved: currentOpHash,
 						}, false
 					})

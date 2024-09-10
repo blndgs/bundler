@@ -14,7 +14,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/go-logr/logr"
-	multierror "github.com/hashicorp/go-multierror"
 	"github.com/puzpuzpuz/xsync/v3"
 	"github.com/stackup-wallet/stackup-bundler/pkg/modules"
 	"github.com/stackup-wallet/stackup-bundler/pkg/userop"
@@ -46,7 +45,7 @@ func SimulateTxWithTenderly(cfg *conf.Values,
 		computeHashFn := func(unsolvedOpHash, currentOpHash string, err error) {
 			txHashes.Compute(unsolvedOpHash, func(oldValue OpHashes, loaded bool) (newValue OpHashes, delete bool) {
 				return OpHashes{
-					Error:  multierror.Append(oldValue.Error, err),
+					Error:  errors.Join(oldValue.Error, err),
 					Solved: currentOpHash,
 				}, false
 			})

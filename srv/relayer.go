@@ -2,6 +2,7 @@ package srv
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"math/big"
@@ -90,6 +91,32 @@ func (r *Relayer) SetWaitTimeout(timeout time.Duration) {
 	r.waitTimeout = timeout
 }
 
+// computeOPHashesMetadata enhances the userop with extra metadata that will be needed by clients
+// Metadata added includes errors and the tx hash.
+// If errors are available, the response is sent back to the client immediately
+// Else the client will receive the tx hash which they can then proceed to fetch the reciept
+// or otherwise
+func (r *Relayer) computeOPHashesMetadata(
+	userOps []*userop.UserOperation,
+	err error,
+	hash common.Hash) {
+
+	for _, op := range userOps {
+
+		currentOpHash, unsolvedOpHash := utils.GetUserOpHash(op, r.ep, r.chainID)
+
+		r.m.Compute(unsolvedOpHash,
+			func(oldValue OpHashes, loaded bool) (newValue OpHashes, delete bool) {
+
+				return OpHashes{
+					Error:  errors.Join(oldValue.Error, err),
+					Solved: currentOpHash,
+					Trx:    hash,
+				}, false
+			})
+	}
+}
+
 // SendUserOperation returns a BatchHandler that is used by the Bundler to send batches in a regular EOA
 // transaction.
 func (r *Relayer) SendUserOperation() modules.BatchHandlerFunc {
@@ -124,11 +151,13 @@ func (r *Relayer) SendUserOperation() modules.BatchHandlerFunc {
 		for len(ctx.Batch) > 0 {
 			est, revert, err := estimateHandleOpsGas(&opts)
 			if revert != nil {
+				r.computeOPHashesMetadata(ctx.Batch, errors.New(revert.Reason), common.Hash{})
 				ctx.MarkOpIndexForRemoval(revert.OpIndex, revert.Reason)
 			} else if err != nil {
 				r.logger.Error(err, "failed to estimate gas for handleOps")
 
 				err = fmt.Errorf("failed to estimate gas for handleOps likely not enough gas: %w", err)
+				r.computeOPHashesMetadata(ctx.Batch, err, common.Hash{})
 				ctx.MarkOpIndexForRemoval(0, err.Error())
 
 				span.RecordError(err)
@@ -148,23 +177,12 @@ func (r *Relayer) SendUserOperation() modules.BatchHandlerFunc {
 
 				span.RecordError(err)
 				span.SetStatus(codes.Error, err.Error())
+				r.computeOPHashesMetadata(ctx.Batch, err, common.Hash{})
 				return err
 			} else {
 				txHash := txn.Hash().String()
 				ctx.Data["txn_hash"] = txHash
-				// Store the transaction hash for each userOp in the batch.
-				for _, op := range ctx.Batch {
-
-					currentOpHash, unsolvedOpHash := utils.GetUserOpHash(op, r.ep, r.chainID)
-
-					r.m.Compute(unsolvedOpHash, func(oldValue OpHashes, loaded bool) (newValue OpHashes, delete bool) {
-						return OpHashes{
-							Error:  oldValue.Error,
-							Solved: currentOpHash,
-							Trx:    txn.Hash(),
-						}, false
-					})
-				}
+				r.computeOPHashesMetadata(ctx.Batch, nil, txn.Hash())
 			}
 		}
 

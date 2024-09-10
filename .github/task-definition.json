@@ -48,7 +48,7 @@
         },
         {
           "name": "ERC4337_BUNDLER_SERVICE_NAME",
-          "value": "VAR_ERC4337_BUNDLER_SERVICE_NAME"
+          "value": "Bundler"
         },
         {
           "name": "ERC4337_BUNDLER_TENDERLY_ENABLE_SIMULATION",
