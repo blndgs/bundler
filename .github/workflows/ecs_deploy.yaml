@@ -45,7 +45,9 @@ jobs:
 
       - name: Run Integration Tests
         env:
-          TEST_RPC_URL: ${{ secrets[format('{0}_ERC4337_BUNDLER_ETH_CLIENT_URL', env.PREFIX)] }}
+          ## not using env specific clients as LIVE_ will point to a mainnet RPC
+          ## and simulation wouldn't work as an example there
+          TEST_RPC_URL: ${{ secrets.INTEGRATION_TEST_TENDERLY_ETH_CLIENT_URL }}
         run: make test-integration
 
   deploy:
