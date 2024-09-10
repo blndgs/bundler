@@ -116,7 +116,9 @@ func main() {
 
 	stdLogger = stdLogger.WithValues(
 		"service", values.ServiceName,
-		"host", h)
+		"host", h,
+		"chain", getChainName(chain.Int64()),
+	)
 
 	validator := validations.New(
 		db,
@@ -260,4 +262,15 @@ func runDBGarbageCollection(db *badger.DB) {
 			}
 		}
 	}(db)
+}
+
+func getChainName(chainID int64) string {
+	switch chainID {
+	case 56:
+		return "BNB"
+	case 1:
+		return "ETH"
+	default:
+		return ""
+	}
 }
