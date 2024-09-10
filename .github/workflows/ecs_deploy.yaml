@@ -241,6 +241,7 @@ jobs:
           echo "PREFIX=$PREFIX"
 
       - name: Trigger E2Etests
+        if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/testnet'
         run: |
           branch=$(echo ${{ env.PREFIX }} | awk '{print tolower($1)}')  
           response=$(curl -L -X POST -H "Accept: application/vnd.github+json" \
