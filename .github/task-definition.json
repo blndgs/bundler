@@ -48,13 +48,17 @@
         },
         {
           "name": "ERC4337_BUNDLER_SERVICE_NAME",
-          "value": "VAR_ERC4337_BUNDLER_SERVICE_NAME"
+          "value": "Bundler"
+        },
+        {
+          "name": "ERC4337_BUNDLER_TENDERLY_ENABLE_SIMULATION",
+          "value": "VAR_ERC4337_BUNDLER_TENDERLY_ENABLE_SIMULATION"
         }
       ],
       "healthCheck": {
         "command": [
           "CMD-SHELL",
-          "curl -f http://localhost:4337/ping || exit 1"
+          "curl -f http://localhost:4337/health || exit 1"
         ],
         "interval": 5,
         "timeout": 30,

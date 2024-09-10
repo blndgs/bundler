@@ -49,8 +49,13 @@ func NewRPCServer(values *conf.Values, logger logr.Logger, relayer *srv.Relayer,
 		gin.Recovery(),
 	)
 
-	r.GET("/ping", func(g *gin.Context) {
-		g.Status(http.StatusOK)
+	r.GET("/health", func(g *gin.Context) {
+		g.JSON(http.StatusOK, gin.H{
+			"status":        http.StatusOK,
+			"message":       "Server is up and running.",
+			"commit_id":     conf.GetGitCommitID(),
+			"model_version": conf.GetModelVersion(),
+		})
 	})
 
 	handlers := []gin.HandlerFunc{
