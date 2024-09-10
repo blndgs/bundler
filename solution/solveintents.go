@@ -237,12 +237,24 @@ func (h *IntentsHandler) ReportSolverHealth(solverURL string) error {
 
 // sendToSolver sends the batch of UserOperations to the Solver.
 func (ei *IntentsHandler) sendToSolver(body model.BodyOfUserOps) error {
+
+	parsedURL, err := url.Parse(ei.SolverURL)
+	if err != nil {
+		return err
+	}
+
+	parsedURL.Path = "/solve"
+	parsedURL.RawQuery = ""
+	parsedURL.Fragment = ""
+
+	solverURL := parsedURL.String()
+
 	jsonBody, err := json.Marshal(body)
 	if err != nil {
 		return err
 	}
 
-	req, err := http.NewRequest(http.MethodPost, ei.SolverURL, bytes.NewBuffer(jsonBody))
+	req, err := http.NewRequest(http.MethodPost, solverURL, bytes.NewBuffer(jsonBody))
 	if err != nil {
 		return err
 	}
