@@ -12,8 +12,12 @@ RUN go mod download
 # Copy local code to the container image.
 COPY . ./
 
+# Obtain the current Git commit ID and model version dynamically
+ARG COMMIT_ID
+ARG MODEL_VERSION
+
 # Build the binary.
-RUN go build -v -o bundler cmd/main.go
+RUN go build -a -installsuffix cgo -ldflags "-X main.CommitID=${COMMIT_ID} -X main.ModelVersion=${MODEL_VERSION}" -v -o bundler cmd/main.go
 
 # Use the official Debian slim image for a lean production container.
 # https://hub.docker.com/_/debian

@@ -36,7 +36,13 @@ import (
 	"github.com/blndgs/bundler/validations"
 )
 
+// build time LDFlags
+var (
+	CommitID, ModelVersion string
+)
+
 func main() {
+	conf.SetLDFlags(CommitID, ModelVersion)
 	values := conf.GetValues()
 
 	if strings.TrimSpace(values.ServiceName) == "" {
@@ -89,6 +95,13 @@ func main() {
 	}
 
 	stdLogger := logger.NewZeroLogr(values.DebugMode)
+
+	h, err := os.Hostname()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	stdLogger = stdLogger.WithValues("service", values.ServiceName, "host", h)
 
 	validator := validations.New(
 		db,

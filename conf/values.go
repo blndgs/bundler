@@ -14,6 +14,11 @@ import (
 	"github.com/stackup-wallet/stackup-bundler/pkg/signer"
 )
 
+var (
+	GitCommitID  string
+	ModelVersion string
+)
+
 const (
 	CollectorTracer          = "bundlerCollectorTracer"
 	ExecutorTracer           = "bundlerExecutorTracer"
@@ -114,7 +119,7 @@ func GetValues() *Values {
 	viper.SetDefault("erc4337_bundler_native_bundler_executor_tracer", ExecutorTracer)
 	viper.SetDefault("erc4337_bundler_status_timeout", time.Second*300)
 	viper.SetDefault("erc4337_bundler_address_whitelist", "")
-	viper.SetDefault("erc4337_bundler_tenderly_enable_simulation", true)
+	viper.SetDefault("erc4337_bundler_tenderly_enable_simulation", false)
 	viper.SetDefault("erc4337_bundler_simulation_timeout", defaultSimulationTimeout)
 
 	// Read in from .env file if available
@@ -288,4 +293,20 @@ func strToAddrs(s []string) []common.Address {
 	}
 
 	return a
+}
+
+// SetLDFlags set LD Flags from main.
+func SetLDFlags(commitID, modelVersion string) {
+	GitCommitID = commitID
+	ModelVersion = modelVersion
+}
+
+// GetGitCommitID get commit id.
+func GetGitCommitID() string {
+	return GitCommitID
+}
+
+// GetModelVersion get model version.
+func GetModelVersion() string {
+	return ModelVersion
 }

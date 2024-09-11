@@ -14,7 +14,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/go-logr/logr"
-	multierror "github.com/hashicorp/go-multierror"
 	"github.com/puzpuzpuz/xsync/v3"
 	"github.com/stackup-wallet/stackup-bundler/pkg/modules"
 	"github.com/stackup-wallet/stackup-bundler/pkg/userop"
@@ -46,7 +45,7 @@ func SimulateTxWithTenderly(cfg *conf.Values,
 		computeHashFn := func(unsolvedOpHash, currentOpHash string, err error) {
 			txHashes.Compute(unsolvedOpHash, func(oldValue OpHashes, loaded bool) (newValue OpHashes, delete bool) {
 				return OpHashes{
-					Error:  multierror.Append(oldValue.Error, err),
+					Error:  errors.Join(oldValue.Error, err),
 					Solved: currentOpHash,
 				}, false
 			})
@@ -73,17 +72,7 @@ func SimulateTxWithTenderly(cfg *conf.Values,
 					return err
 				}
 
-				outgoingAssetChanges := resp.Result.AssetChanges[0]
-
-				if common.HexToAddress(outgoingAssetChanges.From).Hex() != userop.Sender.Hex() {
-					err = errors.New("first outward transaction does not belong to the userop sender")
-
-					logger.Error(err, "unexpected asset_changes structure")
-
-					computeHashFn(unsolvedOpHash, currentOpHash, err)
-					return err
-				}
-
+				// only check the last TX to make sure it is being deposited to the userop sender
 				incomingAssetChanges := resp.Result.AssetChanges[len(resp.Result.AssetChanges)-1]
 
 				if common.HexToAddress(incomingAssetChanges.To).Hex() != userop.Sender.Hex() {

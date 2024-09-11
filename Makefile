@@ -11,7 +11,7 @@ BINARY_UNIX := $(BINARY_NAME)_unix
 all: test build
 
 build:
-	$(GOBUILD) -o $(BINARY_NAME) -v cmd/main.go
+	$(GOBUILD) -ldflags "-X 'main.CommitID=$(shell git rev-parse HEAD)' -X 'main.ModelVersion=$(shell go list -m github.com/blndgs/model | cut -d ' ' -f2)'" -o $(BINARY_NAME) -v cmd/main.go
 
 test:
 	$(GOTEST) -v ./...
@@ -24,10 +24,10 @@ clean:
 	rm -f $(BINARY_NAME)
 
 run-prv:
-	$(GOCMD) run cmd/main.go start --mode private
+	$(GOCMD) run -ldflags "-X 'main.CommitID=$(shell git rev-parse HEAD)' -X 'main.ModelVersion=$(shell go list -m github.com/blndgs/model | cut -d ' ' -f2)'" cmd/main.go start --mode private
 
 run-mev:
-	$(GOCMD) run cmd/main.go start --mode searcher
+	$(GOCMD) run -ldflags "-X 'main.CommitID=$(shell git rev-parse HEAD)' -X 'main.ModelVersion=$(shell go list -m github.com/blndgs/model | cut -d ' ' -f2)'" cmd/main.go start --mode searcher
 
 rm-db:
 	rm -rf /tmp/balloondogs_db

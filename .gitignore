@@ -24,3 +24,6 @@ go.work
 .idea
 
 .env
+
+# Ignore build file (generated in the root folder)
+/bundler

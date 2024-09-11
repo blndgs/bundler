@@ -16,6 +16,7 @@ package solution
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"math/big"
@@ -25,11 +26,12 @@ import (
 	"unsafe"
 
 	"github.com/blndgs/bundler/srv"
+	"github.com/blndgs/bundler/utils"
 	"github.com/blndgs/model"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/go-logr/logr"
 	"github.com/goccy/go-json"
-	"github.com/pkg/errors"
+	pkgerrors "github.com/pkg/errors"
 	"github.com/puzpuzpuz/xsync/v3"
 
 	pb "github.com/blndgs/model/gen/go/proto/v1"
@@ -128,9 +130,24 @@ func (ei *IntentsHandler) SolveIntents() modules.BatchHandlerFunc {
 			return nil
 		}
 
+		computeHashFn := func(unsolvedOpHash, currentOpHash string, err error) {
+			ei.txHashes.Compute(unsolvedOpHash, func(oldValue srv.OpHashes, loaded bool) (newValue srv.OpHashes, delete bool) {
+				return srv.OpHashes{
+					Error:  errors.Join(oldValue.Error, err),
+					Solved: currentOpHash,
+				}, false
+			})
+		}
+
 		if err := ei.sendToSolver(body); err != nil {
+
 			ei.logger.Error(err, "communication with solver failed")
-			return err
+
+			for _, op := range ctx.Batch {
+				currentOpHash, unsolvedOpHash := utils.GetUserOpHash(op, ei.ep, ei.chainID)
+				computeHashFn(unsolvedOpHash, currentOpHash, err)
+				return err
+			}
 		}
 
 		for idx, opExt := range body.UserOpsExt {
@@ -139,6 +156,8 @@ func (ei *IntentsHandler) SolveIntents() modules.BatchHandlerFunc {
 			ei.logger.Info("Solver response", "status", opExt.ProcessingStatus,
 				"batchIndex", batchIndex, "hash", body.UserOpsExt[idx].OriginalHashValue)
 
+			currentOpHash, unsolvedOpHash := utils.GetUserOpHash(ctx.Batch[idx], ei.ep, ei.chainID)
+
 			switch opExt.ProcessingStatus {
 			case pb.ProcessingStatus_PROCESSING_STATUS_UNSOLVED, pb.ProcessingStatus_PROCESSING_STATUS_EXPIRED,
 				pb.ProcessingStatus_PROCESSING_STATUS_INVALID, pb.ProcessingStatus_PROCESSING_STATUS_RECEIVED:
@@ -146,6 +165,9 @@ func (ei *IntentsHandler) SolveIntents() modules.BatchHandlerFunc {
 				// dropping further processing
 				ctx.MarkOpIndexForRemoval(int(batchIndex), string("intent uo not solved:"+opExt.ProcessingStatus.String()))
 				ei.logger.Info("Solver dropping ops", "status", opExt.ProcessingStatus, "body", body.UserOps[idx].String())
+
+				err := pkgerrors.Errorf("unknown processing status: %s", opExt.ProcessingStatus)
+				computeHashFn(unsolvedOpHash, currentOpHash, err)
 
 			case pb.ProcessingStatus_PROCESSING_STATUS_SOLVED:
 				// copy the solved userOp values to the received batch's userOp values
@@ -160,9 +182,11 @@ func (ei *IntentsHandler) SolveIntents() modules.BatchHandlerFunc {
 				ctx.Batch[batchIndex].MaxPriorityFeePerGas.Set(body.UserOps[idx].MaxPriorityFeePerGas)
 
 			default:
-				err := errors.Errorf("unknown processing status: %s", opExt.ProcessingStatus)
+				err := pkgerrors.Errorf("unknown processing status: %s", opExt.ProcessingStatus)
 
 				ei.logger.Error(err, "unknown processing status")
+
+				computeHashFn(unsolvedOpHash, currentOpHash, err)
 				return err
 			}
 		}
@@ -213,12 +237,24 @@ func (h *IntentsHandler) ReportSolverHealth(solverURL string) error {
 
 // sendToSolver sends the batch of UserOperations to the Solver.
 func (ei *IntentsHandler) sendToSolver(body model.BodyOfUserOps) error {
+
+	parsedURL, err := url.Parse(ei.SolverURL)
+	if err != nil {
+		return err
+	}
+
+	parsedURL.Path = "/solve"
+	parsedURL.RawQuery = ""
+	parsedURL.Fragment = ""
+
+	solverURL := parsedURL.String()
+
 	jsonBody, err := json.Marshal(body)
 	if err != nil {
 		return err
 	}
 
-	req, err := http.NewRequest(http.MethodPost, ei.SolverURL, bytes.NewBuffer(jsonBody))
+	req, err := http.NewRequest(http.MethodPost, solverURL, bytes.NewBuffer(jsonBody))
 	if err != nil {
 		return err
 	}
