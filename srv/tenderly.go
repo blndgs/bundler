@@ -8,25 +8,37 @@ import (
 	"errors"
 	"math/big"
 	"net/http"
+	"os"
+	"strings"
 
 	"github.com/blndgs/bundler/conf"
 	"github.com/blndgs/bundler/utils"
+	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/go-logr/logr"
 	"github.com/puzpuzpuz/xsync/v3"
+	"github.com/stackup-wallet/stackup-bundler/pkg/entrypoint"
 	"github.com/stackup-wallet/stackup-bundler/pkg/modules"
+	"github.com/stackup-wallet/stackup-bundler/pkg/signer"
 	"github.com/stackup-wallet/stackup-bundler/pkg/userop"
 	"golang.org/x/sync/errgroup"
 )
 
-func SimulateTxWithTenderly(cfg *conf.Values,
-	chainCliet *ethclient.Client,
+func SimulateTxWithTenderly(signer *signer.EOA,
+	cfg *conf.Values,
+	chainClient *ethclient.Client,
 	logger logr.Logger, txHashes *xsync.MapOf[string, OpHashes],
 	entrypointAddr common.Address, chainID *big.Int) modules.BatchHandlerFunc {
 
 	client := &http.Client{
 		Timeout: cfg.SimulationTimeout,
+	}
+
+	parsed, err := abi.JSON(strings.NewReader(entrypoint.EntrypointABI))
+	if err != nil {
+		logger.Error(err, "could not parse Entrypoint ABI")
+		os.Exit(1)
 	}
 
 	return func(ctx *modules.BatchHandlerCtx) error {
@@ -58,7 +70,7 @@ func SimulateTxWithTenderly(cfg *conf.Values,
 
 				currentOpHash, unsolvedOpHash := utils.GetUserOpHash(userop, entrypointAddr, chainID)
 
-				resp, err := doSimulateUserop(userop, logger, client, entrypointAddr, cfg)
+				resp, err := doSimulateUserop(parsed, signer.Address, userop, logger, client, entrypointAddr, cfg)
 				if err != nil {
 					computeHashFn(unsolvedOpHash, currentOpHash, err)
 					return err
@@ -90,16 +102,26 @@ func SimulateTxWithTenderly(cfg *conf.Values,
 	}
 }
 
-func doSimulateUserop(userop *userop.UserOperation,
+func doSimulateUserop(
+	userOpsParsedABI abi.ABI,
+	sender common.Address,
+	userop *userop.UserOperation,
 	logger logr.Logger,
 	client *http.Client,
 	entrypointAddr common.Address,
 	cfg *conf.Values) (simulationResponse, error) {
 
+	calldata, err := userOpsParsedABI.Pack("handleOps",
+		[]entrypoint.UserOperation{entrypoint.UserOperation(*userop)},
+		common.HexToAddress(cfg.Beneficiary))
+	if err != nil {
+		return simulationResponse{}, err
+	}
+
 	var data = simulationRequest{
-		Data: "0x" + hex.EncodeToString(userop.CallData),
-		To:   userop.Sender.Hex(),
-		From: entrypointAddr.Hex(),
+		Data: "0x" + hex.EncodeToString(calldata),
+		To:   entrypointAddr.Hex(),
+		From: sender.Hex(),
 	}
 
 	r := tenderlySimulationRequest{
