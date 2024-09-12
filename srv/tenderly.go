@@ -111,7 +111,8 @@ func doSimulateUserop(
 	entrypointAddr common.Address,
 	cfg *conf.Values) (simulationResponse, error) {
 
-	calldata, err := userOpsParsedABI.Pack("handleOps", []entrypoint.UserOperation{entrypoint.UserOperation(*userop)},
+	calldata, err := userOpsParsedABI.Pack("handleOps",
+		[]entrypoint.UserOperation{entrypoint.UserOperation(*userop)},
 		common.HexToAddress(cfg.Beneficiary))
 	if err != nil {
 		return simulationResponse{}, err

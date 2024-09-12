@@ -5,21 +5,33 @@ package srv
 
 import (
 	"bytes"
+	"context"
+	"crypto/ecdsa"
 	"encoding/hex"
+	"fmt"
+	"io"
 	"math/big"
+	"net/http"
 	"os"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/blndgs/bundler/conf"
+	"github.com/ethereum/go-ethereum"
+	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/go-logr/logr"
 	"github.com/go-logr/zerologr"
 	"github.com/puzpuzpuz/xsync/v3"
 	"github.com/rs/zerolog"
 	"github.com/stackup-wallet/stackup-bundler/pkg/modules"
+	"github.com/stackup-wallet/stackup-bundler/pkg/signer"
 	"github.com/stackup-wallet/stackup-bundler/pkg/userop"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/crypto/sha3"
 )
 
 func TestSimulateTx(t *testing.T) {
@@ -33,37 +45,55 @@ func TestSimulateTx(t *testing.T) {
 
 	hashes := xsync.NewMapOf[string, OpHashes]()
 
+	eoaSigner := generateWallet(t)
+
+	// Ankr staking
+	b, err := hex.DecodeString(`d6f6b170000000000000000000000000000000000000000000000000000000000000006000000000000000000000000000000000000000000000000000000000000000a000000000000000000000000000000000000000000000000000000000000000e00000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000016345785d8a0006000000000000000000000000000000000000000000000000000000000000000100000000000000000000000084db6ee82b7cf3b47e8f19270abde5718b9366700000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000000049fa65c5600000000000000000000000000000000000000000000000000000000`)
+	require.NoError(t, err)
+
+	sender := getSender(t, eoaSigner.Address, rpcURL)
+
+	op := &userop.UserOperation{
+		Sender:               sender,
+		Nonce:                big.NewInt(0),
+		CallData:             b,
+		InitCode:             getInitCode(t, eoaSigner.Address),
+		CallGasLimit:         big.NewInt(200000),
+		PreVerificationGas:   big.NewInt(500000),
+		VerificationGasLimit: big.NewInt(500000),
+		MaxFeePerGas:         big.NewInt(200000),
+		MaxPriorityFeePerGas: big.NewInt(200000),
+	}
+
+	op, err = sign(big.NewInt(888), eoaSigner.PrivateKey, op, common.HexToAddress(conf.EntrypointAddrV060))
+	require.NoError(t, err)
+
+	beneficiary := common.HexToAddress("0xa4BFe126D3aD137F972695dDdb1780a29065e556")
+
 	cfg := &conf.Values{
 		SimulationEnabled: true,
 		EthClientUrl:      rpcURL,
+		Beneficiary:       eoaSigner.Address.Hex(),
 	}
 
-	handler := SimulateTxWithTenderly(cfg, client, logr.Discard(),
+	fundUserWallet(t, sender, rpcURL)
+
+	handler := SimulateTxWithTenderly(
+		&signer.EOA{
+			Address: beneficiary,
+		},
+		cfg, client,
+		logr.Discard(),
 		hashes,
-		common.HexToAddress(conf.EntrypointAddrV060), big.NewInt(1))
-
-	batch := []*userop.UserOperation{}
-
-	b, err := hex.DecodeString(`d6f6b170000000000000000000000000000000000000000000000000000000000000006000000000000000000000000000000000000000000000000000000000000000c0000000000000000000000000000000000000000000000000000000000000012000000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000020000000000000000000000006b175474e89094c44da98b954eedeac495271d0f000000000000000000000000def1c0ded9bec7f1a1670819833240f027b25eff0000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000c00000000000000000000000000000000000000000000000000000000000000044095ea7b3000000000000000000000000def1c0ded9bec7f1a1670819833240f027b25eff0000000000000000000000000000000000000000000000000de0b6b3a7640000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000748415565b00000000000000000000000006b175474e89094c44da98b954eedeac495271d0f000000000000000000000000a0b86991c6218b36c1d19d4a2e9eb0ce3606eb480000000000000000000000000000000000000000000000000de0b6b3a764000000000000000000000000000000000000000000000000000000000000000da8ae00000000000000000000000000000000000000000000000000000000000000a00000000000000000000000000000000000000000000000000000000000000003000000000000000000000000000000000000000000000000000000000000006000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000500000000000000000000000000000000000000000000000000000000000000002100000000000000000000000000000000000000000000000000000000000000400000000000000000000000000000000000000000000000000000000000000340000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000000000000000000000000000000006b175474e89094c44da98b954eedeac495271d0f000000000000000000000000a0b86991c6218b36c1d19d4a2e9eb0ce3606eb4800000000000000000000000000000000000000000000000000000000000001400000000000000000000000000000000000000000000000000000000000000300000000000000000000000000000000000000000000000000000000000000030000000000000000000000000000000000000000000000000000000000000002c00000000000000000000000000000000000000000000000000de0b6b3a7640000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000003000000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000002556e69737761705632000000000000000000000000000000000000000000000000000000000000000de0b6b3a764000000000000000000000000000000000000000000000000000000000000000dadee000000000000000000000000000000000000000000000000000000000000008000000000000000000000000000000000000000000000000000000000000000a0000000000000000000000000f164fc0ec4e93095b804a4795bbe1e041497b92a000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000020000000000000000000000006b175474e89094c44da98b954eedeac495271d0f000000000000000000000000a0b86991c6218b36c1d19d4a2e9eb0ce3606eb48000000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001b000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000a000000000000000000000000000000000000000000000000000000000000000200000000000000000000000000000000000000000000000000000000000000001000000000000000000000000a0b86991c6218b36c1d19d4a2e9eb0ce3606eb480000000000000000000000000000000000000000000000000000000000000540000000000000000000000000ad01c20d5886137e056775af56915de824c8fce5000000000000000000000000000000000000000000000000000000000000001c000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000e00000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000004000000000000000000000000000000000000000000000000000000000000000a000000000000000000000000000000000000000000000000000000000000000020000000000000000000000006b175474e89094c44da98b954eedeac495271d0f000000000000000000000000eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee0000000000000000000000000000000000000000000000000000000000000000869584cd000000000000000000000000100000000000000000000000000000000000001100000000000000000000000000000000000000006f5500e2be6972e25053af40000000000000000000000000000000000000000000000000`)
-	require.NoError(t, err)
-
-	// build multiple user ops
-	batch = append(batch, &userop.UserOperation{
-		Sender:               common.HexToAddress("0xc291efdc1a6420cbb226294806604833982ed24d"),
-		MaxFeePerGas:         big.NewInt(1000),
-		Nonce:                big.NewInt(20),
-		CallGasLimit:         big.NewInt(1000),
-		PreVerificationGas:   big.NewInt(1002),
-		VerificationGasLimit: big.NewInt(10005),
-		MaxPriorityFeePerGas: big.NewInt(14003),
-		CallData:             b,
-	})
+		common.HexToAddress(conf.EntrypointAddrV060),
+		big.NewInt(1))
 
 	composedHandler := modules.ComposeBatchHandlerFunc(handler)
 
 	require.NoError(t, composedHandler(&modules.BatchHandlerCtx{
-		Batch: batch,
+		Batch: []*userop.UserOperation{op},
 	}))
+
 }
 
 func TestSimulateTx_NotEnabled(t *testing.T) {
@@ -91,9 +121,13 @@ func TestSimulateTx_NotEnabled(t *testing.T) {
 		Logger().
 		Level(zerolog.InfoLevel)
 
-	handler := SimulateTxWithTenderly(cfg, client, zerologr.New(&zl),
+	handler := SimulateTxWithTenderly(
+		generateWallet(t),
+		cfg, client,
+		zerologr.New(&zl),
 		hashes,
-		common.HexToAddress(conf.EntrypointAddrV060), big.NewInt(1))
+		common.HexToAddress(conf.EntrypointAddrV060),
+		big.NewInt(1))
 
 	batch := []*userop.UserOperation{}
 
@@ -116,4 +150,157 @@ func TestSimulateTx_NotEnabled(t *testing.T) {
 	}))
 
 	require.Contains(t, logBuffer.String(), "skipping simulation")
+}
+
+func generateWallet(t *testing.T) *signer.EOA {
+	privateKey, err := crypto.GenerateKey()
+	require.NoError(t, err)
+
+	publicKey := privateKey.Public()
+	publicKeyECDSA, ok := publicKey.(*ecdsa.PublicKey)
+	require.True(t, ok)
+
+	publicKeyBytes := crypto.FromECDSAPub(publicKeyECDSA)
+
+	hash := sha3.NewLegacyKeccak256()
+	_, err = hash.Write(publicKeyBytes[1:])
+	require.NoError(t, err)
+
+	s, err := signer.New(fmt.Sprintf("%x", privateKey.D.Bytes()))
+	require.NoError(t, err)
+
+	return s
+}
+
+func fundUserWallet(t *testing.T,
+	addr common.Address,
+	rpcURL string) error {
+
+	reqbody := fmt.Sprintf(`
+{
+    "jsonrpc": "2.0",
+    "method": "tenderly_setBalance",
+    "params": [
+      [
+        "%s"
+        ],
+      "0x3635C9ADC5DEA00000"
+      ]
+}
+	`, addr.Hex())
+
+	req, err := http.NewRequest(http.MethodPost, rpcURL, strings.NewReader(reqbody))
+	require.NoError(t, err)
+
+	req.Header.Add("Content-Type", "application/json")
+	req.Header.Add("Accept", "application/json")
+
+	client := &http.Client{
+		Timeout: time.Minute,
+	}
+
+	resp, err := client.Do(req)
+	require.NoError(t, err)
+
+	defer resp.Body.Close()
+
+	_, err = io.Copy(io.Discard, resp.Body)
+	require.NoError(t, err)
+
+	return nil
+}
+
+func sign(chainID *big.Int,
+	privateKey *ecdsa.PrivateKey,
+	userOp *userop.UserOperation,
+	entryPointAddr common.Address) (*userop.UserOperation, error) {
+
+	signature, err := getSignature(chainID, privateKey, entryPointAddr, userOp)
+	if err != nil {
+		return &userop.UserOperation{}, err
+	}
+
+	userOp.Signature = signature
+	return userOp, nil
+}
+
+func getSignature(chainID *big.Int, privateKey *ecdsa.PrivateKey, entryPointAddr common.Address,
+	userOp *userop.UserOperation) ([]byte, error) {
+	userOpHashObj := userOp.GetUserOpHash(entryPointAddr, chainID)
+
+	userOpHash := userOpHashObj.Bytes()
+	prefixedHash := crypto.Keccak256Hash(
+		[]byte(fmt.Sprintf("\x19Ethereum Signed Message:\n%d%s", len(userOpHash), userOpHash)),
+	)
+
+	signature, err := crypto.Sign(prefixedHash.Bytes(), privateKey)
+	if err != nil {
+		return nil, err
+	}
+
+	signature[64] += 27
+	return signature, nil
+}
+
+func getSender(t *testing.T, account common.Address, rpcURL string) common.Address {
+
+	parsed, err := abi.JSON(strings.NewReader(`
+[
+  {
+    "constant": false,
+    "inputs": [
+      {
+        "type": "address"
+      },
+		{
+		"type" : "uint256"
+		}
+    ],
+    "name": "getAddress",
+    "outputs": [
+      {
+        "type": "address"
+      }
+    ],
+    "payable": false,
+    "type": "function"
+  }
+]
+		`))
+	require.NoError(t, err)
+
+	callData, err := parsed.Pack("getAddress", account, big.NewInt(0))
+	require.NoError(t, err)
+
+	client, err := ethclient.Dial(rpcURL)
+	require.NoError(t, err)
+
+	to := common.HexToAddress("0x61e218301932a2550ae8e4cd1ecfca7be64e57dc")
+
+	result, err := client.CallContract(context.Background(), ethereum.CallMsg{
+		To:   &to,
+		Data: callData,
+	}, nil)
+	require.NoError(t, err)
+
+	addr := common.Address{}
+	err = parsed.UnpackIntoInterface(&addr, "getAddress", result)
+	require.NoError(t, err)
+
+	return addr
+}
+
+func getInitCode(t *testing.T,
+	addr common.Address) []byte {
+	t.Helper()
+
+	s := fmt.Sprintf(`0x61e218301932a2550AE8E4Cd1EcfCA7bE64E57DC5fbfb9cf000000000000000000000000%s0000000000000000000000000000000000000000000000000000000000000000`,
+		strings.TrimPrefix(addr.Hex(), "0x"))
+
+	hexStr := strings.TrimPrefix(s, "0x")
+
+	b, err := hex.DecodeString(hexStr)
+	require.NoError(t, err)
+
+	return b
 }
