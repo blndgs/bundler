@@ -8,6 +8,7 @@ import (
 	"errors"
 	"math/big"
 	"net/http"
+	"os"
 	"strings"
 
 	"github.com/blndgs/bundler/conf"
@@ -32,6 +33,12 @@ func SimulateTxWithTenderly(signer *signer.EOA,
 
 	client := &http.Client{
 		Timeout: cfg.SimulationTimeout,
+	}
+
+	parsed, err := abi.JSON(strings.NewReader(entrypoint.EntrypointABI))
+	if err != nil {
+		logger.Error(err, "could not parse Entrypoint ABI")
+		os.Exit(1)
 	}
 
 	return func(ctx *modules.BatchHandlerCtx) error {
@@ -63,7 +70,7 @@ func SimulateTxWithTenderly(signer *signer.EOA,
 
 				currentOpHash, unsolvedOpHash := utils.GetUserOpHash(userop, entrypointAddr, chainID)
 
-				resp, err := doSimulateUserop(signer.Address, userop, logger, client, entrypointAddr, cfg)
+				resp, err := doSimulateUserop(parsed, signer.Address, userop, logger, client, entrypointAddr, cfg)
 				if err != nil {
 					computeHashFn(unsolvedOpHash, currentOpHash, err)
 					return err
@@ -96,6 +103,7 @@ func SimulateTxWithTenderly(signer *signer.EOA,
 }
 
 func doSimulateUserop(
+	userOpsParsedABI abi.ABI,
 	sender common.Address,
 	userop *userop.UserOperation,
 	logger logr.Logger,
@@ -103,12 +111,7 @@ func doSimulateUserop(
 	entrypointAddr common.Address,
 	cfg *conf.Values) (simulationResponse, error) {
 
-	parsed, err := abi.JSON(strings.NewReader(entrypoint.EntrypointABI))
-	if err != nil {
-		return simulationResponse{}, err
-	}
-
-	calldata, err := parsed.Pack("handleOps", []entrypoint.UserOperation{entrypoint.UserOperation(*userop)},
+	calldata, err := userOpsParsedABI.Pack("handleOps", []entrypoint.UserOperation{entrypoint.UserOperation(*userop)},
 		common.HexToAddress(cfg.Beneficiary))
 	if err != nil {
 		return simulationResponse{}, err
