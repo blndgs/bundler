@@ -161,6 +161,13 @@ func main() {
 		os.Exit(1)
 	}
 
+	simulatorHandler := srv.SimulateTxWithTenderly(eoa, values,
+		eth,
+		stdLogger,
+		relayer.GetOpHashes(),
+		values.SupportedEntryPoints[0],
+		chain)
+
 	bundlerClient.UseModules(
 		whitelistHandler,
 		exp.DropExpired(),
@@ -168,7 +175,7 @@ func main() {
 		batch.MaintainGasLimit(values.MaxBatchGasLimit),
 		solver.ValidateIntents(),
 		solver.SolveIntents(),
-		srv.SimulateTxWithTenderly(values, eth, stdLogger, relayer.GetOpHashes(), values.SupportedEntryPoints[0], chain),
+		simulatorHandler,
 		relayer.SendUserOperation(),
 		rep.IncOpsIncluded(),
 		check.Clean(),
