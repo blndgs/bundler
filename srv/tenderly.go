@@ -138,7 +138,7 @@ func doSimulateUserop(
 		return simulationResponse{}, err
 	}
 
-	req, err := http.NewRequest(http.MethodPost, cfg.EthClientUrl, b)
+	req, err := http.NewRequest(http.MethodPost, cfg.SimulationURL, b)
 	if err != nil {
 		return simulationResponse{}, err
 	}
