@@ -74,6 +74,7 @@ func TestSimulateTx(t *testing.T) {
 		SimulationEnabled: true,
 		EthClientUrl:      rpcURL,
 		Beneficiary:       eoaSigner.Address.Hex(),
+		SimulationURL:     rpcURL,
 	}
 
 	fundUserWallet(t, sender, rpcURL)
