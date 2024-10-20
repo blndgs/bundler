@@ -104,7 +104,7 @@ jobs:
           VAR_ENV_NAME: ${{ secrets[format('{0}_ENV_NAME', env.PREFIX)] }}
           VAR_APP_NAME: "bundler-${{ matrix.network }}"
           VAR_IMAGE: ${{ secrets[format('{0}_ECR_URL', env.PREFIX)] }}/${{ secrets[format('{0}_AWS_REPOSITORY', env.PREFIX)] }}:${{ github.sha }}
-          VAR_ERC4337_BUNDLER_ETH_CLIENT_URL: ${{ secrets[format('{0}_ERC4337_BUNDLER_{1}_CLIENT_URL', env.PREFIX, toupper(matrix.network))] }}
+          VAR_ERC4337_BUNDLER_ETH_CLIENT_URL: ${{ secrets[format('{0}_ERC4337_BUNDLER_{1}_CLIENT_URL', env.PREFIX, matrix.network)] }}
           VAR_ERC4337_BUNDLER_PRIVATE_KEY: ${{ secrets[format('{0}_ERC4337_BUNDLER_PRIVATE_KEY', env.PREFIX)] }}
           VAR_ERC4337_BUNDLER_MAX_BATCH_GAS_LIMIT: ${{ secrets[format('{0}_ERC4337_BUNDLER_MAX_BATCH_GAS_LIMIT', env.PREFIX)] }}
           VAR_ERC4337_BUNDLER_DEBUG_MODE: ${{ secrets[format('{0}_ERC4337_BUNDLER_DEBUG_MODE', env.PREFIX)] }}
