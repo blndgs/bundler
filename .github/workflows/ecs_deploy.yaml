@@ -95,7 +95,7 @@ jobs:
               docker build --build-arg COMMIT_ID=${IMAGE_TAG} --build-arg MODEL_VERSION=${MODEL_VERSION} -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
               docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
           else
-              echo "Image already exists, proceding..."
+              echo "Image already exists on ECR, proceeding with deployment ..."
           fi
 
       - name: Change task definition for ${{ matrix.network }}
