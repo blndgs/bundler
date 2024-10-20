@@ -205,7 +205,7 @@ func GetValues() *Values {
 		panic("Fatal config error: solver_url not set")
 	}
 
-	if viper.IsSet("erc4337_bundler_tenderly_enable_simulation") &&
+	if viper.GetBool("erc4337_bundler_tenderly_enable_simulation") &&
 		variableNotSetOrIsNil("erc4337_bundler_simulation_url") {
 		panic("Fatal config error: erc4337_bundler_tenderly_enable_simulation is set without specifying a tenderly simulation endpoint")
 	}
