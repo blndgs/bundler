@@ -65,6 +65,7 @@ type Values struct {
 
 	SimulationEnabled bool
 	SimulationTimeout time.Duration
+	SimulationURL     string
 }
 
 func variableNotSetOrIsNil(env string) bool {
@@ -168,6 +169,7 @@ func GetValues() *Values {
 	_ = viper.BindEnv("erc4337_bundler_tenderly_url")
 	_ = viper.BindEnv("erc4337_bundler_tenderly_access_key")
 	_ = viper.BindEnv("erc4337_bundler_simulation_timeout")
+	_ = viper.BindEnv("erc4337_bundler_simulation_url")
 
 	// Validate required variables
 	if variableNotSetOrIsNil("erc4337_bundler_eth_client_url") {
@@ -203,6 +205,11 @@ func GetValues() *Values {
 		panic("Fatal config error: solver_url not set")
 	}
 
+	if viper.GetBool("erc4337_bundler_tenderly_enable_simulation") &&
+		variableNotSetOrIsNil("erc4337_bundler_simulation_url") {
+		panic("Fatal config error: erc4337_bundler_tenderly_enable_simulation is set without specifying a tenderly simulation endpoint")
+	}
+
 	// Return Values
 	privateKey := viper.GetString("erc4337_bundler_private_key")
 	ethClientUrl := viper.GetString("erc4337_bundler_eth_client_url")
@@ -234,6 +241,7 @@ func GetValues() *Values {
 	whitelistedAddresses := envArrayToStringSlice(viper.GetString("erc4337_bundler_address_whitelist"))
 	isSimulationEnabled := viper.GetBool("erc4337_bundler_tenderly_enable_simulation")
 	simulationTimeout := viper.GetDuration("erc4337_bundler_simulation_timeout")
+	simulationURL := viper.GetString("erc4337_bundler_simulation_url")
 
 	return &Values{
 		PrivateKey:                   privateKey,
@@ -267,6 +275,7 @@ func GetValues() *Values {
 		WhiteListedAddresses:         strToAddrs(whitelistedAddresses),
 		SimulationEnabled:            isSimulationEnabled,
 		SimulationTimeout:            simulationTimeout,
+		SimulationURL:                simulationURL,
 	}
 }
 

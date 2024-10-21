@@ -53,6 +53,10 @@
         {
           "name": "ERC4337_BUNDLER_TENDERLY_ENABLE_SIMULATION",
           "value": "VAR_ERC4337_BUNDLER_TENDERLY_ENABLE_SIMULATION"
+        },
+        {
+          "name": "ERC4337_BUNDLER_SIMULATION_URL",
+          "value": "VAR_ERC4337_BUNDLER_SIMULATION_URL"
         }
       ],
       "healthCheck": {
