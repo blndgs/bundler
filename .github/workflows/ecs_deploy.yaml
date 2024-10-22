@@ -95,7 +95,7 @@ jobs:
   deploy:
     if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/'))
     name: Deploy Image and Env Variables
-    needs: build
+    needs: build_docker_image
     runs-on: ubuntu-latest
     strategy:
       matrix:
