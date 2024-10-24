@@ -6,56 +6,80 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"math/big"
 	"net/http"
-	"os"
-	"strings"
 
 	"github.com/blndgs/bundler/conf"
 	"github.com/blndgs/bundler/utils"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/go-logr/logr"
-	"github.com/puzpuzpuz/xsync/v3"
 	"github.com/stackup-wallet/stackup-bundler/pkg/entrypoint"
 	"github.com/stackup-wallet/stackup-bundler/pkg/modules"
-	"github.com/stackup-wallet/stackup-bundler/pkg/signer"
 	"github.com/stackup-wallet/stackup-bundler/pkg/userop"
 	"golang.org/x/sync/errgroup"
 )
 
-func SimulateTxWithTenderly(signer *signer.EOA,
-	cfg *conf.Values,
-	chainClient *ethclient.Client,
-	logger logr.Logger, txHashes *xsync.MapOf[string, OpHashes],
-	entrypointAddr common.Address, chainID *big.Int) modules.BatchHandlerFunc {
+type tenderlySimulationRequest struct {
+	Jsonrpc string        `json:"jsonrpc"`
+	Id      int           `json:"id"`
+	Method  string        `json:"method"`
+	Params  []interface{} `json:"params"`
+}
 
-	client := &http.Client{
-		Timeout: cfg.SimulationTimeout,
-	}
+type simulationResponse struct {
+	ID      int    `json:"id"`
+	Jsonrpc string `json:"jsonrpc"`
+	Result  struct {
+		Status       bool `json:"status"`
+		AssetChanges []struct {
+			AssetInfo struct {
+				Standard        string `json:"standard"`
+				Type            string `json:"type"`
+				ContractAddress string `json:"contractAddress"`
+				Symbol          string `json:"symbol"`
+				Name            string `json:"name"`
+				Logo            string `json:"logo"`
+				Decimals        int    `json:"decimals"`
+				DollarValue     string `json:"dollarValue"`
+			} `json:"assetInfo"`
+			Type        string `json:"type"`
+			From        string `json:"from"`
+			To          string `json:"to"`
+			RawAmount   string `json:"rawAmount"`
+			Amount      string `json:"amount"`
+			DollarValue string `json:"dollarValue"`
+		} `json:"assetChanges"`
+		BalanceChanges []struct {
+			Address     string `json:"address"`
+			DollarValue string `json:"dollarValue"`
+			Transfers   []int  `json:"transfers"`
+		} `json:"balanceChanges"`
+	} `json:"result"`
+}
 
-	parsed, err := abi.JSON(strings.NewReader(entrypoint.EntrypointABI))
-	if err != nil {
-		logger.Error(err, "could not parse Entrypoint ABI")
-		os.Exit(1)
-	}
+type simulationRequest struct {
+	From string `json:"from,omitempty"`
+	To   string `json:"to,omitempty"`
+	Data string `json:"data,omitempty"`
+}
 
+func (s *Simulator) Tenderly() modules.BatchHandlerFunc {
 	return func(ctx *modules.BatchHandlerCtx) error {
+		logger := s.logger
 
-		if !cfg.SimulationEnabled {
+		if !s.cfg.SimulationEnabled {
 			logger.Info("skipping simulation")
 			return nil
 		}
 
 		_, span := utils.GetTracer().
-			Start(context.Background(), "SimulateTxWithTenderly")
+			Start(context.Background(), "simulator.tenderly")
 		defer span.End()
 
 		var g errgroup.Group
 
 		computeHashFn := func(unsolvedOpHash, currentOpHash string, err error) {
-			txHashes.Compute(unsolvedOpHash, func(oldValue OpHashes, loaded bool) (newValue OpHashes, delete bool) {
+			s.txHashes.Compute(unsolvedOpHash, func(oldValue OpHashes, loaded bool) (newValue OpHashes, delete bool) {
 				return OpHashes{
 					Error:  errors.Join(oldValue.Error, err),
 					Solved: currentOpHash,
@@ -68,9 +92,9 @@ func SimulateTxWithTenderly(signer *signer.EOA,
 
 			g.Go(func() error {
 
-				currentOpHash, unsolvedOpHash := utils.GetUserOpHash(userop, entrypointAddr, chainID)
+				currentOpHash, unsolvedOpHash := utils.GetUserOpHash(userop, s.entryPointAddr, s.chainID)
 
-				resp, err := doSimulateUserop(parsed, signer.Address, userop, logger, client, entrypointAddr, cfg)
+				resp, err := doSimulateUserop(s.parsedABI, s.sender, userop, logger, s.httpClient, s.entryPointAddr, s.cfg)
 				if err != nil {
 					computeHashFn(unsolvedOpHash, currentOpHash, err)
 					return err
@@ -104,7 +128,7 @@ func SimulateTxWithTenderly(signer *signer.EOA,
 
 func doSimulateUserop(
 	userOpsParsedABI abi.ABI,
-	sender common.Address,
+	sender string,
 	userop *userop.UserOperation,
 	logger logr.Logger,
 	client *http.Client,
@@ -121,7 +145,7 @@ func doSimulateUserop(
 	var data = simulationRequest{
 		Data: "0x" + hex.EncodeToString(calldata),
 		To:   entrypointAddr.Hex(),
-		From: sender.Hex(),
+		From: sender,
 	}
 
 	r := tenderlySimulationRequest{
@@ -197,48 +221,4 @@ func doSimulateUserop(
 	}
 
 	return simulatedResponse, nil
-}
-
-type tenderlySimulationRequest struct {
-	Jsonrpc string        `json:"jsonrpc"`
-	Id      int           `json:"id"`
-	Method  string        `json:"method"`
-	Params  []interface{} `json:"params"`
-}
-
-type simulationResponse struct {
-	ID      int    `json:"id"`
-	Jsonrpc string `json:"jsonrpc"`
-	Result  struct {
-		Status       bool `json:"status"`
-		AssetChanges []struct {
-			AssetInfo struct {
-				Standard        string `json:"standard"`
-				Type            string `json:"type"`
-				ContractAddress string `json:"contractAddress"`
-				Symbol          string `json:"symbol"`
-				Name            string `json:"name"`
-				Logo            string `json:"logo"`
-				Decimals        int    `json:"decimals"`
-				DollarValue     string `json:"dollarValue"`
-			} `json:"assetInfo"`
-			Type        string `json:"type"`
-			From        string `json:"from"`
-			To          string `json:"to"`
-			RawAmount   string `json:"rawAmount"`
-			Amount      string `json:"amount"`
-			DollarValue string `json:"dollarValue"`
-		} `json:"assetChanges"`
-		BalanceChanges []struct {
-			Address     string `json:"address"`
-			DollarValue string `json:"dollarValue"`
-			Transfers   []int  `json:"transfers"`
-		} `json:"balanceChanges"`
-	} `json:"result"`
-}
-
-type simulationRequest struct {
-	From string `json:"from,omitempty"`
-	To   string `json:"to,omitempty"`
-	Data string `json:"data,omitempty"`
 }

@@ -161,12 +161,12 @@ func main() {
 		os.Exit(1)
 	}
 
-	simulatorHandler := srv.SimulateTxWithTenderly(eoa, values,
-		eth,
-		stdLogger,
-		relayer.GetOpHashes(),
-		values.SupportedEntryPoints[0],
-		chain)
+	simulator, err := srv.NewSimulator(eoa, values, eth, stdLogger,
+		relayer.GetOpHashes(), values.SupportedEntryPoints[0], chain)
+	if err != nil {
+		stdLogger.Error(err, "error occurred while setting up simulation handler")
+		os.Exit(1)
+	}
 
 	bundlerClient.UseModules(
 		whitelistHandler,
@@ -175,7 +175,8 @@ func main() {
 		batch.MaintainGasLimit(values.MaxBatchGasLimit),
 		solver.ValidateIntents(),
 		solver.SolveIntents(),
-		simulatorHandler,
+		simulator.Tenderly(),
+		simulator.Onchain(eoa),
 		relayer.SendUserOperation(),
 		rep.IncOpsIncluded(),
 		check.Clean(),
