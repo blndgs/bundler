@@ -55,13 +55,16 @@ type Values struct {
 	DebugMode                    bool
 	GinMode                      string
 	SolverURL                    string
+
 	// If empty, all addresses will be accepted
-	WhiteListedAddresses  []common.Address
-	ServiceName           string
-	OTELIsEnabled         bool
-	OTELCollectorHeaders  map[string]string
-	OTELCollectorEndpoint string
-	OTELInsecureMode      bool
+	WhiteListedAddresses []common.Address
+	ServiceName          string
+
+	OTELIsEnabled                 bool
+	OTELCollectorHeaders          map[string]string
+	OTELCollectorEndpoint         string
+	OTELInsecureMode              bool
+	OTELPrometheusMetricsPassword string
 
 	SimulationEnabled bool
 	SimulationTimeout time.Duration
@@ -210,6 +213,11 @@ func GetValues() *Values {
 		panic("Fatal config error: erc4337_bundler_tenderly_enable_simulation is set without specifying a tenderly simulation endpoint")
 	}
 
+	if viper.GetBool("erc4337_bundler_otel_is_enabled") &&
+		variableNotSetOrIsNil("erc4337_bundler_otel_prometheus_metrics_password") {
+		panic("Fatal config error: OTEL is enabled but the prometheus metrics endpoint password is not set or empty")
+	}
+
 	// Return Values
 	privateKey := viper.GetString("erc4337_bundler_private_key")
 	ethClientUrl := viper.GetString("erc4337_bundler_eth_client_url")
@@ -226,6 +234,7 @@ func GetValues() *Values {
 	ethBuilderUrls := envArrayToStringSlice(viper.GetString("erc4337_bundler_eth_builder_urls"))
 	blocksInTheFuture := viper.GetInt("erc4337_bundler_blocks_in_the_future")
 	otelIsEnabled := viper.GetBool("erc4337_bundler_otel_is_enabled")
+	otelPrometheusAccessToken := viper.GetString("erc4337_bundler_otel_prometheus_metrics_password")
 	serviceName := viper.GetString("erc4337_bundler_service_name")
 	otelCollectorHeader := envKeyValStringToMap(viper.GetString("erc4337_bundler_otel_collector_headers"))
 	otelCollectorUrl := viper.GetString("erc4337_bundler_otel_collector_url")
@@ -244,38 +253,39 @@ func GetValues() *Values {
 	simulationURL := viper.GetString("erc4337_bundler_simulation_url")
 
 	return &Values{
-		PrivateKey:                   privateKey,
-		EthClientUrl:                 ethClientUrl,
-		Port:                         port,
-		DataDirectory:                dataDirectory,
-		SupportedEntryPoints:         supportedEntryPoints,
-		Beneficiary:                  beneficiary,
-		NativeBundlerCollectorTracer: nativeBundlerCollectorTracer,
-		NativeBundlerExecutorTracer:  nativeBundlerExecutorTracer,
-		MaxVerificationGas:           maxVerificationGas,
-		MaxBatchGasLimit:             maxBatchGasLimit,
-		MaxOpTTL:                     maxOpTTL,
-		OpLookupLimit:                opLookupLimit,
-		ReputationConstants:          NewReputationConstantsFromEnv(),
-		EthBuilderUrls:               ethBuilderUrls,
-		BlocksInTheFuture:            blocksInTheFuture,
-		OTELIsEnabled:                otelIsEnabled,
-		ServiceName:                  serviceName,
-		OTELCollectorHeaders:         otelCollectorHeader,
-		OTELCollectorEndpoint:        otelCollectorUrl,
-		OTELInsecureMode:             otelInsecureMode,
-		AltMempoolIPFSGateway:        altMempoolIPFSGateway,
-		AltMempoolIds:                altMempoolIds,
-		IsOpStackNetwork:             isOpStackNetwork,
-		IsRIP7212Supported:           isRIP7212Supported,
-		DebugMode:                    debugMode,
-		GinMode:                      ginMode,
-		SolverURL:                    solverURL,
-		StatusTimeout:                useropStatusWaitTime,
-		WhiteListedAddresses:         strToAddrs(whitelistedAddresses),
-		SimulationEnabled:            isSimulationEnabled,
-		SimulationTimeout:            simulationTimeout,
-		SimulationURL:                simulationURL,
+		PrivateKey:                    privateKey,
+		EthClientUrl:                  ethClientUrl,
+		Port:                          port,
+		DataDirectory:                 dataDirectory,
+		SupportedEntryPoints:          supportedEntryPoints,
+		Beneficiary:                   beneficiary,
+		NativeBundlerCollectorTracer:  nativeBundlerCollectorTracer,
+		NativeBundlerExecutorTracer:   nativeBundlerExecutorTracer,
+		MaxVerificationGas:            maxVerificationGas,
+		MaxBatchGasLimit:              maxBatchGasLimit,
+		MaxOpTTL:                      maxOpTTL,
+		OpLookupLimit:                 opLookupLimit,
+		ReputationConstants:           NewReputationConstantsFromEnv(),
+		EthBuilderUrls:                ethBuilderUrls,
+		BlocksInTheFuture:             blocksInTheFuture,
+		OTELIsEnabled:                 otelIsEnabled,
+		ServiceName:                   serviceName,
+		OTELCollectorHeaders:          otelCollectorHeader,
+		OTELCollectorEndpoint:         otelCollectorUrl,
+		OTELInsecureMode:              otelInsecureMode,
+		OTELPrometheusMetricsPassword: otelPrometheusAccessToken,
+		AltMempoolIPFSGateway:         altMempoolIPFSGateway,
+		AltMempoolIds:                 altMempoolIds,
+		IsOpStackNetwork:              isOpStackNetwork,
+		IsRIP7212Supported:            isRIP7212Supported,
+		DebugMode:                     debugMode,
+		GinMode:                       ginMode,
+		SolverURL:                     solverURL,
+		StatusTimeout:                 useropStatusWaitTime,
+		WhiteListedAddresses:          strToAddrs(whitelistedAddresses),
+		SimulationEnabled:             isSimulationEnabled,
+		SimulationTimeout:             simulationTimeout,
+		SimulationURL:                 simulationURL,
 	}
 }
 

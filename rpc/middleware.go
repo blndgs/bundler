@@ -2,6 +2,7 @@ package rpc
 
 import (
 	"errors"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -61,4 +62,27 @@ func WithLogr(logger logr.Logger) gin.HandlerFunc {
 	}
 }
 
-// func WithMetricsProtector()
+func WithMetricsProtector(accessToken string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+
+		authHeader := c.GetHeader("Authorization")
+		if authHeader == "" {
+			c.AbortWithStatus(401)
+			return
+		}
+
+		const prefix = "Bearer "
+		if !strings.HasPrefix(authHeader, prefix) {
+			c.AbortWithStatus(401)
+			return
+		}
+
+		token := authHeader[len(prefix):]
+		if token != accessToken {
+			c.AbortWithStatus(401)
+			return
+		}
+
+		c.Next()
+	}
+}

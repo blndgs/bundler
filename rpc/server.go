@@ -48,10 +48,10 @@ func NewRPCServer(values *conf.Values, logger logr.Logger, relayer *srv.Relayer,
 
 		metrics := r.Group("/metrics")
 		{
-			metrics.GET("", gin.WrapH(promhttp.Handler()))
+			metrics.GET("",
+				WithMetricsProtector(values.OTELPrometheusMetricsPassword),
+				gin.WrapH(promhttp.Handler()))
 		}
-	} else {
-		logger.Info("OTEL is not enabled")
 	}
 
 	r.Use(
