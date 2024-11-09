@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/blndgs/bundler/internal/metrics"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/go-logr/logr"
 	"go.opentelemetry.io/otel"
@@ -65,7 +66,7 @@ func initResources(opts *options, logger logr.Logger) *resource.Resource {
 	return resources
 }
 
-func initOTELCapabilities(cfg *options, logger logr.Logger) func() {
+func initOTELCapabilities(cfg *options, logger logr.Logger) (*metrics.BundlerMetrics, func()) {
 
 	otel.SetTextMapPropagator(
 		propagation.NewCompositeTextMapPropagator(
@@ -153,20 +154,16 @@ func initOTELCapabilities(cfg *options, logger logr.Logger) func() {
 
 	meter := meterProvider.Meter("balloondogs.meter")
 
-	opCounter, err = meter.Int64Counter("userops.counter")
+	m, err := metrics.New(meter)
 	if err != nil {
-		logger.Error(err, "could not create int64 counter")
+		logger.Error(err, "could not setup bundler metris")
 		os.Exit(1)
 	}
 
-	registerMetrics(logger)
+	return m, func() {
+		m.Stop()
 
-	return func() {
 		_ = traceExporter.Shutdown(context.Background())
 		_ = metricExporter.Shutdown(context.Background())
 	}
-}
-
-func registerMetrics(logger logr.Logger) {
-
 }

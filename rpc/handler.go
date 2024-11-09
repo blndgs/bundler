@@ -27,6 +27,7 @@ import (
 	"go.opentelemetry.io/otel/codes"
 
 	"github.com/blndgs/bundler/conf"
+	"github.com/blndgs/bundler/internal/metrics"
 	"github.com/blndgs/bundler/srv"
 	"github.com/blndgs/bundler/utils"
 )
@@ -56,7 +57,7 @@ const (
 func ExtERC4337Controller(hashesMap *xsync.MapOf[string, srv.OpHashes],
 	rpcAdapter *client.RpcAdapter, rpcClient *rpc.Client,
 	ethRPCClient *ethclient.Client, values *conf.Values,
-	logger logr.Logger) gin.HandlerFunc {
+	logger logr.Logger, bundlerMetrics *metrics.BundlerMetrics) gin.HandlerFunc {
 
 	return func(c *gin.Context) {
 		logger = logger.WithValues("method", "ExtERC4337Controller")
@@ -126,7 +127,8 @@ func ExtERC4337Controller(hashesMap *xsync.MapOf[string, srv.OpHashes],
 		logger.Info("Processing rpc request", "method", method)
 
 		if isStdEthereumRPCMethod(method) || strings.ToLower(method) == ethSendOpMethod {
-			routeStdEthereumRPCRequest(ctx, c, rpcAdapter, method, rpcClient, ethRPCClient, hashesMap, data, values, logger)
+			routeStdEthereumRPCRequest(ctx, c, rpcAdapter, method, rpcClient,
+				ethRPCClient, hashesMap, data, values, logger, bundlerMetrics)
 			return
 		}
 
@@ -158,9 +160,12 @@ func isStdEthereumRPCMethod(method string) bool {
 	return !isBundlerMethod
 }
 
-func routeStdEthereumRPCRequest(ctx context.Context, c *gin.Context, rpcAdapter *client.RpcAdapter, method string,
-	rpcClient *rpc.Client, ethClient *ethclient.Client, hashesMap *xsync.MapOf[string, srv.OpHashes],
-	requestData map[string]any, values *conf.Values, logger logr.Logger) {
+func routeStdEthereumRPCRequest(ctx context.Context,
+	c *gin.Context, rpcAdapter *client.RpcAdapter,
+	method string, rpcClient *rpc.Client, ethClient *ethclient.Client,
+	hashesMap *xsync.MapOf[string, srv.OpHashes], requestData map[string]any,
+	values *conf.Values, logger logr.Logger,
+	bundlerMetrics *metrics.BundlerMetrics) {
 
 	ctx, span := utils.GetTracer().Start(c.Request.Context(), "routeStdEthereumRPCRequest")
 	defer span.End()
@@ -169,7 +174,15 @@ func routeStdEthereumRPCRequest(ctx context.Context, c *gin.Context, rpcAdapter 
 
 	switch strings.ToLower(method) {
 	case ethSendOpMethod:
-		handleEthSendUserOperation(ctx, c, rpcAdapter, ethClient, hashesMap, requestData, values, logger)
+
+		bundlerMetrics.AddUserOpInFlight()
+
+		handleEthSendUserOperation(ctx, c, rpcAdapter,
+			ethClient, hashesMap, requestData, values,
+			logger, bundlerMetrics)
+
+		bundlerMetrics.RemoveUserOpInFlight()
+
 	case ethCall:
 		handleEthCallRequest(ctx, c, ethClient, requestData, logger)
 	default:
@@ -435,9 +448,10 @@ func waitForUserOpCompletion(ctx context.Context, ethClient *ethclient.Client,
 	}
 }
 
-func handleEthSendUserOperation(ctx context.Context, c *gin.Context, rpcAdapter *client.RpcAdapter,
-	ethClient *ethclient.Client, hashesMap *xsync.MapOf[string, srv.OpHashes], requestData map[string]any,
-	values *conf.Values, logger logr.Logger) {
+func handleEthSendUserOperation(ctx context.Context,
+	c *gin.Context, rpcAdapter *client.RpcAdapter, ethClient *ethclient.Client,
+	hashesMap *xsync.MapOf[string, srv.OpHashes], requestData map[string]any,
+	values *conf.Values, logger logr.Logger, bundlerMetrics *metrics.BundlerMetrics) {
 
 	ctx, span := utils.GetTracer().Start(c.Request.Context(), "handleEthSendUserOperation")
 	defer span.End()
