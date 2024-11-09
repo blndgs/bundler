@@ -167,12 +167,15 @@ func routeStdEthereumRPCRequest(ctx context.Context,
 	values *conf.Values, logger logr.Logger,
 	bundlerMetrics *metrics.BundlerMetrics) {
 
+	startTime := time.Now()
+
 	ctx, span := utils.GetTracer().Start(c.Request.Context(), "routeStdEthereumRPCRequest")
 	defer span.End()
 
+	method = strings.ToLower(method)
 	span.SetAttributes(attribute.String("rpc_method", strings.ToLower(method)))
 
-	switch strings.ToLower(method) {
+	switch method {
 	case ethSendOpMethod:
 
 		bundlerMetrics.AddUserOpInFlight()
@@ -188,6 +191,13 @@ func routeStdEthereumRPCRequest(ctx context.Context,
 	default:
 		handleEthRequest(ctx, c, method, rpcClient, requestData, logger)
 	}
+
+	duration := time.Now().Sub(startTime)
+
+	span.SetAttributes(
+		attribute.String("duration", duration.String()))
+
+	bundlerMetrics.TrackETHMethodCall(context.Background(), method, duration)
 }
 
 func handleEthRequest(ctx context.Context, c *gin.Context, method string, rpcClient *rpc.Client,
