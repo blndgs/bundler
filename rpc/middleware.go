@@ -60,3 +60,5 @@ func WithLogr(logger logr.Logger) gin.HandlerFunc {
 		}
 	}
 }
+
+// func WithMetricsProtector()

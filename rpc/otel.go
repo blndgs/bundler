@@ -10,16 +10,20 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/go-logr/logr"
-	"go.opentelemetry.io/contrib/instrumentation/runtime"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
+	metrictypes "go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+)
+
+var (
+	opCounter metrictypes.Int64Counter
 )
 
 type options struct {
@@ -140,13 +144,22 @@ func initOTELCapabilities(cfg *options, logger logr.Logger) func() {
 		os.Exit(1)
 	}
 
-	otel.SetMeterProvider(
-		metric.NewMeterProvider(
-			metric.WithResource(resources),
-			metric.WithReader(
-				metric.NewPeriodicReader(metricExporter))))
+	meterProvider := metric.NewMeterProvider(
+		metric.WithResource(resources),
+		metric.WithReader(
+			metric.NewPeriodicReader(metricExporter)))
 
-	regiterMetrics(logger)
+	otel.SetMeterProvider(meterProvider)
+
+	meter := meterProvider.Meter("balloondogs.meter")
+
+	opCounter, err = meter.Int64Counter("userops.counter")
+	if err != nil {
+		logger.Error(err, "could not create int64 counter")
+		os.Exit(1)
+	}
+
+	registerMetrics(logger)
 
 	return func() {
 		_ = traceExporter.Shutdown(context.Background())
@@ -154,11 +167,6 @@ func initOTELCapabilities(cfg *options, logger logr.Logger) func() {
 	}
 }
 
-func regiterMetrics(logger logr.Logger) {
+func registerMetrics(logger logr.Logger) {
 
-	err := runtime.Start(runtime.WithMinimumReadMemStatsInterval(time.Second))
-	if err != nil {
-		logger.Error(err, "could not gather runtime metrics")
-		os.Exit(1)
-	}
 }
