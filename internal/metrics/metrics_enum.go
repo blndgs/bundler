@@ -14,8 +14,6 @@ import (
 const (
 	// UserOpCounterStatusSuccessful is a UserOpCounterStatus of type successful.
 	UserOpCounterStatusSuccessful UserOpCounterStatus = "successful"
-	// UserOpCounterStatusPending is a UserOpCounterStatus of type pending.
-	UserOpCounterStatusPending UserOpCounterStatus = "pending"
 	// UserOpCounterStatusFailed is a UserOpCounterStatus of type failed.
 	UserOpCounterStatusFailed UserOpCounterStatus = "failed"
 )
@@ -36,7 +34,6 @@ func (x UserOpCounterStatus) IsValid() bool {
 
 var _UserOpCounterStatusValue = map[string]UserOpCounterStatus{
 	"successful": UserOpCounterStatusSuccessful,
-	"pending":    UserOpCounterStatusPending,
 	"failed":     UserOpCounterStatusFailed,
 }
 

@@ -34,7 +34,8 @@ func New(meter metric.Meter) (*BundlerMetrics, error) {
 		return nil, err
 	}
 
-	m.inflightUserOpCounter, err = meter.Int64UpDownCounter("userops_in_flight")
+	m.inflightUserOpCounter, err = meter.Int64UpDownCounter("userops_in_flight",
+		metric.WithDescription("Userops currently being processed"))
 	if err != nil {
 		return nil, err
 	}
@@ -102,7 +103,7 @@ func (m *BundlerMetrics) RemoveUserOpInFlight() {
 	m.inflightUserOpCounter.Add(context.Background(), -1)
 }
 
-// ENUM(successful,pending,failed)
+// ENUM(successful,failed)
 type UserOpCounterStatus string
 
 func (m *BundlerMetrics) AddUserOp(status UserOpCounterStatus) {

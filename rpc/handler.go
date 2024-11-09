@@ -180,9 +180,15 @@ func routeStdEthereumRPCRequest(ctx context.Context,
 
 		bundlerMetrics.AddUserOpInFlight()
 
-		handleEthSendUserOperation(ctx, c, rpcAdapter,
-			ethClient, hashesMap, requestData, values,
-			logger, bundlerMetrics)
+		err := handleEthSendUserOperation(ctx, c, rpcAdapter,
+			ethClient, hashesMap, requestData, values, logger)
+
+		var status = metrics.UserOpCounterStatusSuccessful
+		if err != nil {
+			status = metrics.UserOpCounterStatusFailed
+		}
+
+		bundlerMetrics.AddUserOp(status)
 
 		bundlerMetrics.RemoveUserOpInFlight()
 
@@ -250,8 +256,8 @@ func rpcCall(ctx context.Context, c *gin.Context, method string, rpcClient *rpc.
 	return raw, nil
 }
 
-func sendRawJson(ctx context.Context, c *gin.Context, raw json.RawMessage, id any,
-	logger logr.Logger) {
+func sendRawJson(ctx context.Context, c *gin.Context,
+	raw json.RawMessage, id any, logger logr.Logger) {
 
 	ctx, span := utils.GetTracer().Start(c.Request.Context(), "sendRawJson")
 	defer span.End()
@@ -461,7 +467,7 @@ func waitForUserOpCompletion(ctx context.Context, ethClient *ethclient.Client,
 func handleEthSendUserOperation(ctx context.Context,
 	c *gin.Context, rpcAdapter *client.RpcAdapter, ethClient *ethclient.Client,
 	hashesMap *xsync.MapOf[string, srv.OpHashes], requestData map[string]any,
-	values *conf.Values, logger logr.Logger, bundlerMetrics *metrics.BundlerMetrics) {
+	values *conf.Values, logger logr.Logger) error {
 
 	ctx, span := utils.GetTracer().Start(c.Request.Context(), "handleEthSendUserOperation")
 	defer span.End()
@@ -472,7 +478,7 @@ func handleEthSendUserOperation(ctx context.Context,
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid user operation"})
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
-		return
+		return err
 	}
 
 	ep := requestData["params"].([]interface{})[1].(string)
@@ -483,7 +489,7 @@ func handleEthSendUserOperation(ctx context.Context,
 		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("failed to parse user operation: %s", err)})
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
-		return
+		return err
 	}
 
 	mUo := (model.UserOperation)(*uo)
@@ -494,7 +500,7 @@ func handleEthSendUserOperation(ctx context.Context,
 			c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("failed to parse intent: %s", err)})
 			span.RecordError(err)
 			span.SetStatus(codes.Error, err.Error())
-			return
+			return err
 		}
 	}
 
@@ -504,17 +510,17 @@ func handleEthSendUserOperation(ctx context.Context,
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
-		return
+		return err
 	}
 
-	resp, err := waitForUserOpCompletion(ctx, ethClient, hashesMap, common.HexToHash(userOpHash),
-		values.StatusTimeout)
+	resp, err := waitForUserOpCompletion(ctx, ethClient, hashesMap,
+		common.HexToHash(userOpHash), values.StatusTimeout)
 	if err != nil {
 		logger.Error(err, "error while fetching the status of the userops onchain transaction", "userop_hash", userOpHash)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
-		return
+		return err
 	}
 
 	jsonResp, err := json.Marshal(resp)
@@ -523,8 +529,9 @@ func handleEthSendUserOperation(ctx context.Context,
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
-		return
+		return err
 	}
 
 	sendRawJson(ctx, c, json.RawMessage(jsonResp), requestData["id"], logger)
+	return nil
 }
