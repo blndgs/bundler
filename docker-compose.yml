@@ -7,3 +7,13 @@ services:
       - "4317:4317"
       - "4318:4318"
       - "3000:3000"
+
+  collector:
+    image: otel/opentelemetry-collector-contrib
+    volumes:
+      - ./dev/otel-collector.yml:/etc/otelcol-contrib/config.yaml
+    command: ["--config", "/etc/otelcol-contrib/config.yaml"]
+    ports:
+      - "8888:8888"
+    depends_on:
+      - otel

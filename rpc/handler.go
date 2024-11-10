@@ -27,6 +27,7 @@ import (
 	"go.opentelemetry.io/otel/codes"
 
 	"github.com/blndgs/bundler/conf"
+	"github.com/blndgs/bundler/internal/metrics"
 	"github.com/blndgs/bundler/srv"
 	"github.com/blndgs/bundler/utils"
 )
@@ -56,7 +57,7 @@ const (
 func ExtERC4337Controller(hashesMap *xsync.MapOf[string, srv.OpHashes],
 	rpcAdapter *client.RpcAdapter, rpcClient *rpc.Client,
 	ethRPCClient *ethclient.Client, values *conf.Values,
-	logger logr.Logger) gin.HandlerFunc {
+	logger logr.Logger, bundlerMetrics *metrics.BundlerMetrics) gin.HandlerFunc {
 
 	return func(c *gin.Context) {
 		logger = logger.WithValues("method", "ExtERC4337Controller")
@@ -126,7 +127,8 @@ func ExtERC4337Controller(hashesMap *xsync.MapOf[string, srv.OpHashes],
 		logger.Info("Processing rpc request", "method", method)
 
 		if isStdEthereumRPCMethod(method) || strings.ToLower(method) == ethSendOpMethod {
-			routeStdEthereumRPCRequest(ctx, c, rpcAdapter, method, rpcClient, ethRPCClient, hashesMap, data, values, logger)
+			routeStdEthereumRPCRequest(ctx, c, rpcAdapter, method, rpcClient,
+				ethRPCClient, hashesMap, data, values, logger, bundlerMetrics)
 			return
 		}
 
@@ -158,23 +160,50 @@ func isStdEthereumRPCMethod(method string) bool {
 	return !isBundlerMethod
 }
 
-func routeStdEthereumRPCRequest(ctx context.Context, c *gin.Context, rpcAdapter *client.RpcAdapter, method string,
-	rpcClient *rpc.Client, ethClient *ethclient.Client, hashesMap *xsync.MapOf[string, srv.OpHashes],
-	requestData map[string]any, values *conf.Values, logger logr.Logger) {
+func routeStdEthereumRPCRequest(ctx context.Context,
+	c *gin.Context, rpcAdapter *client.RpcAdapter,
+	method string, rpcClient *rpc.Client, ethClient *ethclient.Client,
+	hashesMap *xsync.MapOf[string, srv.OpHashes], requestData map[string]any,
+	values *conf.Values, logger logr.Logger,
+	bundlerMetrics *metrics.BundlerMetrics) {
+
+	startTime := time.Now()
 
 	ctx, span := utils.GetTracer().Start(c.Request.Context(), "routeStdEthereumRPCRequest")
 	defer span.End()
 
+	method = strings.ToLower(method)
 	span.SetAttributes(attribute.String("rpc_method", strings.ToLower(method)))
 
-	switch strings.ToLower(method) {
+	switch method {
 	case ethSendOpMethod:
-		handleEthSendUserOperation(ctx, c, rpcAdapter, ethClient, hashesMap, requestData, values, logger)
+
+		bundlerMetrics.AddUserOpInFlight()
+
+		err := handleEthSendUserOperation(ctx, c, rpcAdapter,
+			ethClient, hashesMap, requestData, values, logger)
+
+		var status = metrics.UserOpCounterStatusSuccessful
+		if err != nil {
+			status = metrics.UserOpCounterStatusFailed
+		}
+
+		bundlerMetrics.AddUserOp(status, time.Now().Sub(startTime))
+
+		bundlerMetrics.RemoveUserOpInFlight()
+
 	case ethCall:
 		handleEthCallRequest(ctx, c, ethClient, requestData, logger)
 	default:
 		handleEthRequest(ctx, c, method, rpcClient, requestData, logger)
 	}
+
+	duration := time.Now().Sub(startTime)
+
+	span.SetAttributes(
+		attribute.String("duration", duration.String()))
+
+	bundlerMetrics.TrackETHMethodCall(context.Background(), method, duration)
 }
 
 func handleEthRequest(ctx context.Context, c *gin.Context, method string, rpcClient *rpc.Client,
@@ -227,8 +256,8 @@ func rpcCall(ctx context.Context, c *gin.Context, method string, rpcClient *rpc.
 	return raw, nil
 }
 
-func sendRawJson(ctx context.Context, c *gin.Context, raw json.RawMessage, id any,
-	logger logr.Logger) {
+func sendRawJson(ctx context.Context, c *gin.Context,
+	raw json.RawMessage, id any, logger logr.Logger) {
 
 	ctx, span := utils.GetTracer().Start(c.Request.Context(), "sendRawJson")
 	defer span.End()
@@ -435,9 +464,10 @@ func waitForUserOpCompletion(ctx context.Context, ethClient *ethclient.Client,
 	}
 }
 
-func handleEthSendUserOperation(ctx context.Context, c *gin.Context, rpcAdapter *client.RpcAdapter,
-	ethClient *ethclient.Client, hashesMap *xsync.MapOf[string, srv.OpHashes], requestData map[string]any,
-	values *conf.Values, logger logr.Logger) {
+func handleEthSendUserOperation(ctx context.Context,
+	c *gin.Context, rpcAdapter *client.RpcAdapter, ethClient *ethclient.Client,
+	hashesMap *xsync.MapOf[string, srv.OpHashes], requestData map[string]any,
+	values *conf.Values, logger logr.Logger) error {
 
 	ctx, span := utils.GetTracer().Start(c.Request.Context(), "handleEthSendUserOperation")
 	defer span.End()
@@ -448,7 +478,7 @@ func handleEthSendUserOperation(ctx context.Context, c *gin.Context, rpcAdapter 
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid user operation"})
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
-		return
+		return err
 	}
 
 	ep := requestData["params"].([]interface{})[1].(string)
@@ -459,7 +489,7 @@ func handleEthSendUserOperation(ctx context.Context, c *gin.Context, rpcAdapter 
 		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("failed to parse user operation: %s", err)})
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
-		return
+		return err
 	}
 
 	mUo := (model.UserOperation)(*uo)
@@ -470,7 +500,7 @@ func handleEthSendUserOperation(ctx context.Context, c *gin.Context, rpcAdapter 
 			c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("failed to parse intent: %s", err)})
 			span.RecordError(err)
 			span.SetStatus(codes.Error, err.Error())
-			return
+			return err
 		}
 	}
 
@@ -480,17 +510,17 @@ func handleEthSendUserOperation(ctx context.Context, c *gin.Context, rpcAdapter 
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
-		return
+		return err
 	}
 
-	resp, err := waitForUserOpCompletion(ctx, ethClient, hashesMap, common.HexToHash(userOpHash),
-		values.StatusTimeout)
+	resp, err := waitForUserOpCompletion(ctx, ethClient, hashesMap,
+		common.HexToHash(userOpHash), values.StatusTimeout)
 	if err != nil {
 		logger.Error(err, "error while fetching the status of the userops onchain transaction", "userop_hash", userOpHash)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
-		return
+		return err
 	}
 
 	jsonResp, err := json.Marshal(resp)
@@ -499,8 +529,9 @@ func handleEthSendUserOperation(ctx context.Context, c *gin.Context, rpcAdapter 
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
-		return
+		return err
 	}
 
 	sendRawJson(ctx, c, json.RawMessage(jsonResp), requestData["id"], logger)
+	return nil
 }

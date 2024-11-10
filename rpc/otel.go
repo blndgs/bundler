@@ -8,18 +8,23 @@ import (
 	"strings"
 	"time"
 
+	"github.com/blndgs/bundler/internal/metrics"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/go-logr/logr"
-	"go.opentelemetry.io/contrib/instrumentation/runtime"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
+	metrictypes "go.opentelemetry.io/otel/metric"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+)
+
+var (
+	opCounter metrictypes.Int64Counter
 )
 
 type options struct {
@@ -61,7 +66,7 @@ func initResources(opts *options, logger logr.Logger) *resource.Resource {
 	return resources
 }
 
-func initOTELCapabilities(cfg *options, logger logr.Logger) func() {
+func initOTELCapabilities(cfg *options, logger logr.Logger) (*metrics.BundlerMetrics, func()) {
 
 	otel.SetTextMapPropagator(
 		propagation.NewCompositeTextMapPropagator(
@@ -140,25 +145,25 @@ func initOTELCapabilities(cfg *options, logger logr.Logger) func() {
 		os.Exit(1)
 	}
 
-	otel.SetMeterProvider(
-		metric.NewMeterProvider(
-			metric.WithResource(resources),
-			metric.WithReader(
-				metric.NewPeriodicReader(metricExporter))))
+	meterProvider := metric.NewMeterProvider(
+		metric.WithResource(resources),
+		metric.WithReader(
+			metric.NewPeriodicReader(metricExporter)))
 
-	regiterMetrics(logger)
+	otel.SetMeterProvider(meterProvider)
 
-	return func() {
+	meter := meterProvider.Meter("balloondogs.meter")
+
+	m, err := metrics.New(meter)
+	if err != nil {
+		logger.Error(err, "could not setup bundler metris")
+		os.Exit(1)
+	}
+
+	return m, func() {
+		m.Stop()
+
 		_ = traceExporter.Shutdown(context.Background())
 		_ = metricExporter.Shutdown(context.Background())
-	}
-}
-
-func regiterMetrics(logger logr.Logger) {
-
-	err := runtime.Start(runtime.WithMinimumReadMemStatsInterval(time.Second))
-	if err != nil {
-		logger.Error(err, "could not gather runtime metrics")
-		os.Exit(1)
 	}
 }

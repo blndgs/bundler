@@ -6,6 +6,7 @@ import (
 	"os"
 
 	"github.com/blndgs/bundler/conf"
+	"github.com/blndgs/bundler/internal/metrics"
 	"github.com/blndgs/bundler/srv"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
@@ -13,9 +14,11 @@ import (
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"github.com/go-logr/logr"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/stackup-wallet/stackup-bundler/pkg/client"
 	"github.com/stackup-wallet/stackup-bundler/pkg/jsonrpc"
 	"go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
+	"go.opentelemetry.io/otel/sdk/metric"
 )
 
 func NewRPCServer(values *conf.Values, logger logr.Logger, relayer *srv.Relayer,
@@ -33,15 +36,32 @@ func NewRPCServer(values *conf.Values, logger logr.Logger, relayer *srv.Relayer,
 
 	var teardown = func() {}
 
+	bundlerMetrics, err := metrics.New(metric.NewMeterProvider().Meter("noop"))
+	if err != nil {
+		logger.Error(err, "could not set up noop bundler metrics")
+		os.Exit(1)
+	}
+
 	if values.OTELIsEnabled {
-		teardown = initOTELCapabilities(&options{
+
+		logger.Info("OTEL is enabled")
+
+		bundlerMetrics, teardown = initOTELCapabilities(&options{
 			ServiceName:  values.ServiceName,
 			CollectorUrl: values.OTELCollectorEndpoint,
 			InsecureMode: true,
 			ChainID:      chainID,
 			Address:      common.HexToAddress(values.Beneficiary),
 		}, logger)
+
 		r.Use(otelgin.Middleware(values.ServiceName))
+
+		metrics := r.Group("/metrics")
+		{
+			metrics.GET("",
+				WithMetricsProtector(values.OTELPrometheusMetricsPassword),
+				gin.WrapH(promhttp.Handler()))
+		}
 	}
 
 	r.Use(
@@ -61,12 +81,14 @@ func NewRPCServer(values *conf.Values, logger logr.Logger, relayer *srv.Relayer,
 
 	handlers := []gin.HandlerFunc{
 		ExtERC4337Controller(relayer.GetOpHashes(), rpcAdapter, rpcClient,
-			ethClient, values, logger),
+			ethClient, values, logger, bundlerMetrics),
 		jsonrpc.WithOTELTracerAttributes(),
 	}
 
 	r.POST("/", handlers...)
 	r.POST("/rpc", handlers...)
+
+	bundlerMetrics.Start()
 
 	return r, teardown
 }
