@@ -188,7 +188,7 @@ func routeStdEthereumRPCRequest(ctx context.Context,
 			status = metrics.UserOpCounterStatusFailed
 		}
 
-		bundlerMetrics.AddUserOp(status)
+		bundlerMetrics.AddUserOp(status, time.Now().Sub(startTime))
 
 		bundlerMetrics.RemoveUserOpInFlight()
 
