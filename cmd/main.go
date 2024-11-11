@@ -118,7 +118,7 @@ func main() {
 		"service", values.ServiceName,
 		"host", h)
 
-	h, err := os.Hostname()
+	h, err = os.Hostname()
 	if err != nil {
 		log.Fatal(err)
 	}
