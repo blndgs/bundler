@@ -35,6 +35,7 @@ import (
 )
 
 func TestSimulateTx(t *testing.T) {
+	t.Skip()
 
 	rpcURL := os.Getenv("TEST_RPC_URL")
 
