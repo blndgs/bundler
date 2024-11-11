@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"math/big"
@@ -45,8 +46,12 @@ func main() {
 	conf.SetLDFlags(CommitID, ModelVersion)
 	values := conf.GetValues()
 
+	stdLogger := logger.NewZeroLogr(values.DebugMode)
+
 	if strings.TrimSpace(values.ServiceName) == "" {
-		log.Fatal("please provide a valid service name")
+		err := errors.New("please provide a valid service name")
+		stdLogger.Error(err, "no service name provided")
+		os.Exit(1)
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -62,46 +67,56 @@ func main() {
 
 	eoa, err := signer.New(values.PrivateKey)
 	if err != nil {
-		log.Fatal(err)
+		stdLogger.Error(err, "could not set up signer")
+		os.Exit(1)
 	}
+
 	beneficiary := common.HexToAddress(values.Beneficiary)
 
 	rpcClient, err := rpc.Dial(values.EthClientUrl)
 	if err != nil {
-		log.Fatalf("Failed to connect to Ethereum node: %v", err)
+		stdLogger.Error(err, "Failed to connect to Ethereum node")
+		os.Exit(1)
 	}
+
 	eth := ethclient.NewClient(rpcClient)
 
 	db, err := badger.Open(badger.DefaultOptions(values.DataDirectory))
 	if err != nil {
-		log.Fatal(err)
+		stdLogger.Error(err, "could not open badger database")
+		os.Exit(1)
 	}
+
 	defer db.Close()
 	runDBGarbageCollection(db)
 
 	mem, err := mempool.New(db)
 	if err != nil {
-		log.Fatal(err)
+		stdLogger.Error(err, "could not set up Mempool")
+		os.Exit(1)
 	}
 
 	chain, err := eth.ChainID(context.Background())
 	if err != nil {
-		log.Fatal(err)
+		stdLogger.Error(err, "could not fetch chain id from RPC")
+		os.Exit(1)
 	}
 
 	alt, err := altmempools.NewFromIPFS(chain, "", []string{})
 	if err != nil {
-		log.Fatal(err)
+		stdLogger.Error(err, "could not set up the alternative IPFS mempool")
+		os.Exit(1)
 	}
-
-	stdLogger := logger.NewZeroLogr(values.DebugMode)
 
 	h, err := os.Hostname()
 	if err != nil {
-		log.Fatal(err)
+		stdLogger.Error(err, "could not fetch host name of machine")
+		os.Exit(1)
 	}
 
-	stdLogger = stdLogger.WithValues("service", values.ServiceName, "host", h)
+	stdLogger = stdLogger.WithValues(
+		"service", values.ServiceName,
+		"host", h)
 
 	validator := validations.New(
 		db,
@@ -126,7 +141,8 @@ func main() {
 
 	solver := solution.New(values.SolverURL, stdLogger, relayer.GetOpHashes(), values.SupportedEntryPoints[0], chain)
 	if err := solver.ReportSolverHealth(values.SolverURL); err != nil {
-		log.Fatal(err)
+		stdLogger.Error(err, "could not verify Solver's healthcheck")
+		os.Exit(1)
 	}
 
 	erc4337Client := createERC4337Client(mem, values, chain, eth, rpcClient, stdLogger, rep, validator)
@@ -140,9 +156,17 @@ func main() {
 		values.SupportedEntryPoints[0], chain)
 
 	if whitelistHandler == nil {
-		stdLogger.Info("could not set up sender whitelist middleware")
+		err := "could not set up sender whitelist middleware"
+		stdLogger.Info(err, "whitelisting handler could not be setup")
 		os.Exit(1)
 	}
+
+	simulatorHandler := srv.SimulateTxWithTenderly(eoa, values,
+		eth,
+		stdLogger,
+		relayer.GetOpHashes(),
+		values.SupportedEntryPoints[0],
+		chain)
 
 	bundlerClient.UseModules(
 		whitelistHandler,
@@ -151,13 +175,14 @@ func main() {
 		batch.MaintainGasLimit(values.MaxBatchGasLimit),
 		solver.ValidateIntents(),
 		solver.SolveIntents(),
-		srv.SimulateTxWithTenderly(values, eth, stdLogger, relayer.GetOpHashes(), values.SupportedEntryPoints[0], chain),
+		simulatorHandler,
 		relayer.SendUserOperation(),
 		rep.IncOpsIncluded(),
 		check.Clean(),
 	)
 	if err := bundlerClient.Run(); err != nil {
-		log.Fatal(err)
+		stdLogger.Error(err, "could not run Bunclder client")
+		os.Exit(1)
 	}
 
 	var debugClient = client.NewDebug(eoa, eth, mem, rep, bundlerClient, chain, values.SupportedEntryPoints[0], beneficiary)
@@ -171,7 +196,8 @@ func main() {
 	go func() {
 		if err := handler.Run(fmt.Sprintf(":%d", values.Port)); err != nil {
 			cancel()
-			log.Fatal(err)
+			stdLogger.Error(err, "error while running HTTP Handler")
+			os.Exit(1)
 		}
 	}()
 
