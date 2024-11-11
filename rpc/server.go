@@ -1,9 +1,9 @@
 package rpc
 
 import (
-	"log"
 	"math/big"
 	"net/http"
+	"os"
 
 	"github.com/blndgs/bundler/conf"
 	"github.com/blndgs/bundler/srv"
@@ -27,7 +27,8 @@ func NewRPCServer(values *conf.Values, logger logr.Logger, relayer *srv.Relayer,
 	r := gin.New()
 
 	if err := r.SetTrustedProxies(nil); err != nil {
-		log.Fatal(err)
+		logger.Error(err, "could not set up trusted proxies")
+		os.Exit(1)
 	}
 
 	var teardown = func() {}
