@@ -240,5 +240,8 @@ func estimateHandleOpsGas(opts *transaction.Opts) (gas uint64, revert *reverts.F
 		return 0, revert, nil
 	}
 
-	return est, nil, nil
+	fmt.Println("est: ", est)
+
+	estAxelar := float64(est) * 1.50
+	return uint64(estAxelar), nil, nil
 }
