@@ -12,6 +12,7 @@ import (
 	"github.com/blndgs/bundler/srv"
 	"github.com/blndgs/bundler/utils"
 	"github.com/blndgs/model"
+	pb "github.com/blndgs/model/gen/go/proto/v1"
 	"github.com/goccy/go-json"
 	pkgerrors "github.com/pkg/errors"
 	"github.com/stackup-wallet/stackup-bundler/pkg/modules"
@@ -19,9 +20,9 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-// ValidateIntents returns a BatchHandlerFunc that will
-// send the batch of UserOperations to the Solver
-// in other to validate if the userops are valid or not
+// ValidateIntents returns a BatchHandlerFunc that will send the batch of UserOperations
+// to the Solver to validate if the userops are valid or not.
+// Updates status to SENT_TO_SOLVER before validation and handles status changes based on validation results.
 func (ei *IntentsHandler) ValidateIntents() modules.BatchHandlerFunc {
 	return func(ctx *modules.BatchHandlerCtx) error {
 
@@ -37,6 +38,10 @@ func (ei *IntentsHandler) ValidateIntents() modules.BatchHandlerFunc {
 
 		if len(body.UserOps) == 0 {
 			return nil
+		}
+		// Update status to SENT_TO_SOLVER before validation
+		for idx := range body.UserOpsExt {
+			body.UserOpsExt[idx].ProcessingStatus = pb.ProcessingStatus_PROCESSING_STATUS_SENT_TO_SOLVER
 		}
 
 		return ei.sendToSolverForValidation(body, ctx.Batch)
@@ -98,6 +103,9 @@ func (ei *IntentsHandler) sendToSolverForValidation(
 				// skip too much typecasting and just reuse the item from the batch
 				currentOpHash, unsolvedOpHash := utils.GetUserOpHash(batch[idx], ei.ep, ei.chainID)
 
+				// Mark as invalid if validation fails
+				body.UserOpsExt[idx].ProcessingStatus = pb.ProcessingStatus_PROCESSING_STATUS_INVALID
+
 				ei.txHashes.Compute(unsolvedOpHash, func(oldValue srv.OpHashes, loaded bool) (newValue srv.OpHashes, delete bool) {
 					return srv.OpHashes{
 						Error:  errors.Join(oldValue.Error, err),
@@ -107,7 +115,7 @@ func (ei *IntentsHandler) sendToSolverForValidation(
 
 				return err
 			}
-
+			// Keep the status as SENT_TO_SOLVER since validation succeeded
 			return nil
 		})
 	}

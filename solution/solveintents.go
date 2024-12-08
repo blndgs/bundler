@@ -93,7 +93,8 @@ func (ei *IntentsHandler) bufferIntentOps(entrypoint common.Address, chainID *bi
 			body.UserOpsExt = append(body.UserOpsExt, model.UserOperationExt{
 				// Cache hash before it changes
 				OriginalHashValue: hashID,
-				ProcessingStatus:  pb.ProcessingStatus_PROCESSING_STATUS_RECEIVED,
+				// ProcessingStatus set to `Received`.
+				ProcessingStatus: pb.ProcessingStatus_PROCESSING_STATUS_RECEIVED,
 			})
 
 			// Reverse caching
@@ -159,8 +160,10 @@ func (ei *IntentsHandler) SolveIntents() modules.BatchHandlerFunc {
 			currentOpHash, unsolvedOpHash := utils.GetUserOpHash(ctx.Batch[idx], ei.ep, ei.chainID)
 
 			switch opExt.ProcessingStatus {
-			case pb.ProcessingStatus_PROCESSING_STATUS_UNSOLVED, pb.ProcessingStatus_PROCESSING_STATUS_EXPIRED,
-				pb.ProcessingStatus_PROCESSING_STATUS_INVALID, pb.ProcessingStatus_PROCESSING_STATUS_RECEIVED:
+			case pb.ProcessingStatus_PROCESSING_STATUS_UNSOLVED,
+				pb.ProcessingStatus_PROCESSING_STATUS_EXPIRED,
+				pb.ProcessingStatus_PROCESSING_STATUS_INVALID,
+				pb.ProcessingStatus_PROCESSING_STATUS_RECEIVED:
 
 				// dropping further processing
 				ctx.MarkOpIndexForRemoval(int(batchIndex), string("intent uo not solved:"+opExt.ProcessingStatus.String()))
@@ -180,7 +183,8 @@ func (ei *IntentsHandler) SolveIntents() modules.BatchHandlerFunc {
 				ctx.Batch[batchIndex].PreVerificationGas.Set(body.UserOps[idx].PreVerificationGas)
 				ctx.Batch[batchIndex].MaxFeePerGas.Set(body.UserOps[idx].MaxFeePerGas)
 				ctx.Batch[batchIndex].MaxPriorityFeePerGas.Set(body.UserOps[idx].MaxPriorityFeePerGas)
-
+				// Mark as ready for chain submission
+				body.UserOpsExt[idx].ProcessingStatus = pb.ProcessingStatus_PROCESSING_STATUS_ON_CHAIN
 			default:
 				err := pkgerrors.Errorf("unknown processing status: %s", opExt.ProcessingStatus)
 
