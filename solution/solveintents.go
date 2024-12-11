@@ -28,6 +28,7 @@ import (
 	"github.com/blndgs/bundler/srv"
 	"github.com/blndgs/bundler/utils"
 	"github.com/blndgs/model"
+	"github.com/dgraph-io/badger/v3"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/go-logr/logr"
 	"github.com/goccy/go-json"
@@ -51,18 +52,32 @@ type batchOpIndex int
 // batchIntentIndices buffers the mapping of the UserOperation hash value -> the index of the UserOperation in the batch
 type batchIntentIndices map[opHashID]batchOpIndex
 
+// userOpStatusMap struct is the structure for storing the user op status.
+type userOpStatusMap struct {
+	OriginalUserOpHash string
+	SolverUserOpHash   string
+	ProcessingStatus   pb.ProcessingStatus
+	SrcTxHash          string
+}
+
 type IntentsHandler struct {
 	SolverURL    string
 	SolverClient *http.Client
 	logger       logr.Logger
 	txHashes     *xsync.MapOf[string, srv.OpHashes]
+	db           *badger.DB
 	ep           common.Address
 	chainID      *big.Int
 }
 
-func New(solverURL string, logger logr.Logger,
+// New creates a new instance of intent handler.
+func New(
+	solverURL string,
+	logger logr.Logger,
 	txHashes *xsync.MapOf[string, srv.OpHashes],
-	entrypoint common.Address, chainID *big.Int) *IntentsHandler {
+	entrypoint common.Address,
+	chainID *big.Int,
+	db *badger.DB) *IntentsHandler {
 	return &IntentsHandler{
 		SolverURL:    solverURL,
 		SolverClient: &http.Client{Timeout: httpClientTimeout},
@@ -70,7 +85,29 @@ func New(solverURL string, logger logr.Logger,
 		txHashes:     txHashes,
 		ep:           entrypoint,
 		chainID:      chainID,
+		db:           db,
 	}
+}
+
+// UpdateProcessingStatusInDB updates the processing status in the db.
+func (ei *IntentsHandler) UpdateProcessingStatusInDB(
+	originalHash,
+	solvedHash,
+	srcTxHash string,
+	status pb.ProcessingStatus) error {
+	return ei.db.Update(func(txn *badger.Txn) error {
+		statusKey := []byte(fmt.Sprintf("status-%s", originalHash))
+		statusValue, err := json.Marshal(userOpStatusMap{
+			OriginalUserOpHash: originalHash,
+			SolverUserOpHash:   solvedHash,
+			ProcessingStatus:   status,
+			SrcTxHash:          srcTxHash,
+		})
+		if err != nil {
+			return err
+		}
+		return txn.Set(statusKey, statusValue)
+	})
 }
 
 // bufferIntentOps caches the index of the userOp in the received batch and creates the UserOperationExt slice for the

@@ -31,6 +31,7 @@ import (
 
 	"github.com/blndgs/bundler/conf"
 	"github.com/blndgs/bundler/logger"
+	"github.com/blndgs/bundler/receipt"
 	rpcHandler "github.com/blndgs/bundler/rpc"
 	"github.com/blndgs/bundler/solution"
 	"github.com/blndgs/bundler/srv"
@@ -46,8 +47,10 @@ func main() {
 	conf.SetLDFlags(CommitID, ModelVersion)
 	values := conf.GetValues()
 
+	// Initialize the logger
 	stdLogger := logger.NewZeroLogr(values.DebugMode)
 
+	// Validate the service name
 	if strings.TrimSpace(values.ServiceName) == "" {
 		err := errors.New("please provide a valid service name")
 		stdLogger.Error(err, "no service name provided")
@@ -65,6 +68,7 @@ func main() {
 		cancel()
 	}()
 
+	// Initialize the signer
 	eoa, err := signer.New(values.PrivateKey)
 	if err != nil {
 		stdLogger.Error(err, "could not set up signer")
@@ -73,6 +77,7 @@ func main() {
 
 	beneficiary := common.HexToAddress(values.Beneficiary)
 
+	// Connect to the Ethereum client
 	rpcClient, err := rpc.Dial(values.EthClientUrl)
 	if err != nil {
 		stdLogger.Error(err, "Failed to connect to Ethereum node")
@@ -81,27 +86,31 @@ func main() {
 
 	eth := ethclient.NewClient(rpcClient)
 
+	// Open the Badger database
 	db, err := badger.Open(badger.DefaultOptions(values.DataDirectory))
 	if err != nil {
 		stdLogger.Error(err, "could not open badger database")
 		os.Exit(1)
 	}
-
 	defer db.Close()
+
 	runDBGarbageCollection(db)
 
+	// Initialize the mempool
 	mem, err := mempool.New(db)
 	if err != nil {
 		stdLogger.Error(err, "could not set up Mempool")
 		os.Exit(1)
 	}
 
+	// Fetch the chain ID from the Ethereum client
 	chain, err := eth.ChainID(context.Background())
 	if err != nil {
 		stdLogger.Error(err, "could not fetch chain id from RPC")
 		os.Exit(1)
 	}
 
+	// Set up alternative mempool using IPFS
 	alt, err := altmempools.NewFromIPFS(chain, "", []string{})
 	if err != nil {
 		stdLogger.Error(err, "could not set up the alternative IPFS mempool")
@@ -118,6 +127,7 @@ func main() {
 		"service", values.ServiceName,
 		"host", h)
 
+	// Initialize the validator
 	validator := validations.New(
 		db,
 		rpcClient,
@@ -131,26 +141,33 @@ func main() {
 		stdLogger,
 	)
 
+	// Initialize expiration module
 	exp := expire.New(time.Second * values.MaxOpTTL)
 
+	// Initialize the reputation entity
 	rep := entities.New(db, eth, conf.NewReputationConstantsFromEnv())
 
+	// Initialize the relayer
 	relayer := srv.New(values.SupportedEntryPoints[0], eoa, eth, chain, beneficiary, stdLogger)
 
 	stdLogger.Info("Using solver url", "url", values.SolverURL)
 
-	solver := solution.New(values.SolverURL, stdLogger, relayer.GetOpHashes(), values.SupportedEntryPoints[0], chain)
+	// Set up the solver
+	solver := solution.New(values.SolverURL, stdLogger, relayer.GetOpHashes(), values.SupportedEntryPoints[0], chain, db)
 	if err := solver.ReportSolverHealth(values.SolverURL); err != nil {
 		stdLogger.Error(err, "could not verify Solver's healthcheck")
 		os.Exit(1)
 	}
 
+	// Create ERC-4337 client
 	erc4337Client := createERC4337Client(mem, values, chain, eth, rpcClient, stdLogger, rep, validator)
 
+	// Create bundler client
 	bundlerClient := createBundlerClient(mem, chain, values, eth, stdLogger)
 
 	check := validator.ToStandaloneCheck()
 
+	// Set up whitelist handler
 	whitelistHandler, whitelistCleanupFn := srv.CheckSenderWhitelist(db, values.WhiteListedAddresses,
 		stdLogger, relayer.GetOpHashes(),
 		values.SupportedEntryPoints[0], chain)
@@ -161,6 +178,7 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Set up transaction simulation handler
 	simulatorHandler := srv.SimulateTxWithTenderly(eoa, values,
 		eth,
 		stdLogger,
@@ -168,6 +186,7 @@ func main() {
 		values.SupportedEntryPoints[0],
 		chain)
 
+	// Add modules to the bundler client
 	bundlerClient.UseModules(
 		whitelistHandler,
 		exp.DropExpired(),
@@ -181,18 +200,20 @@ func main() {
 		check.Clean(),
 	)
 	if err := bundlerClient.Run(); err != nil {
-		stdLogger.Error(err, "could not run Bunclder client")
+		stdLogger.Error(err, "could not run Bundler client")
 		os.Exit(1)
 	}
 
+	// Set up debug client and RPC server
 	var debugClient = client.NewDebug(eoa, eth, mem, rep, bundlerClient, chain, values.SupportedEntryPoints[0], beneficiary)
 	bundlerClient.SetMaxBatch(1)
 	relayer.SetWaitTimeout(0)
-
+	rpcAdaptor := rpcHandler.NewRpcAdapter(erc4337Client, debugClient)
 	handler, shutdown := rpcHandler.NewRPCServer(values, stdLogger, relayer,
-		client.NewRpcAdapter(erc4337Client, debugClient), eth, rpcClient, chain)
+		rpcAdaptor, eth, rpcClient, chain)
 	defer shutdown()
 
+	// Start the RPC handler
 	go func() {
 		if err := handler.Run(fmt.Sprintf(":%d", values.Port)); err != nil {
 			cancel()
@@ -207,12 +228,21 @@ func main() {
 	whitelistCleanupFn()
 }
 
-func createERC4337Client(mem *mempool.Mempool, values *conf.Values, chainID *big.Int,
-	ethClient *ethclient.Client, rpcClient *rpc.Client, logger logr.Logger,
-	rep *entities.Reputation, validator *validations.Validator) *client.Client {
+// createERC4337Client initializes the ERC-4337 client with configured modules and custom functions.
+func createERC4337Client(
+	mem *mempool.Mempool,
+	values *conf.Values,
+	chainID *big.Int,
+	ethClient *ethclient.Client,
+	rpcClient *rpc.Client,
+	logger logr.Logger,
+	rep *entities.Reputation,
+	validator *validations.Validator) *rpcHandler.Client {
 
-	c := client.New(mem, gas.NewDefaultOverhead(), chainID, values.SupportedEntryPoints, values.OpLookupLimit)
-	c.SetGetUserOpReceiptFunc(client.GetUserOpReceiptWithEthClient(ethClient))
+	c := rpcHandler.NewClient(chainID, mem, values, gas.NewDefaultOverhead())
+
+	// Configure custom receipt and gas-related functions
+	c.SetGetUserOpReceiptFunc(receipt.GetUserOpReceiptWithEthClient(ethClient))
 	c.SetGetGasPricesFunc(client.GetGasPricesWithEthClient(ethClient))
 	c.SetGetGasEstimateFunc(
 		client.GetGasEstimateWithEthClient(
@@ -227,6 +257,7 @@ func createERC4337Client(mem *mempool.Mempool, values *conf.Values, chainID *big
 	c.SetGetUserOpByHashFunc(client.GetUserOpByHashWithEthClient(ethClient))
 	c.UseLogger(logger)
 
+	// Add reputation and validation modules
 	c.UseModules(
 		rep.CheckStatus(),
 		rep.ValidateOpLimit(),
@@ -238,14 +269,23 @@ func createERC4337Client(mem *mempool.Mempool, values *conf.Values, chainID *big
 	return c
 }
 
-func createBundlerClient(mem *mempool.Mempool, chainID *big.Int,
-	values *conf.Values, eth *ethclient.Client, logger logr.Logger) *bundler.Bundler {
+// createBundlerClient initializes the bundler client with necessary configurations and modules.
+func createBundlerClient(
+	mem *mempool.Mempool,
+	chainID *big.Int,
+	values *conf.Values,
+	eth *ethclient.Client,
+	logger logr.Logger) *bundler.Bundler {
 
 	b := bundler.New(mem, chainID, values.SupportedEntryPoints)
+
+	// Configure gas price functions
 	b.SetGetBaseFeeFunc(gasprice.GetBaseFeeWithEthClient(eth))
 	b.SetGetGasTipFunc(gasprice.GetGasTipWithEthClient(eth))
 	b.SetGetLegacyGasPriceFunc(gasprice.GetLegacyGasPriceWithEthClient(eth))
 	b.UseLogger(logger)
+
+	// Set up OpenTelemetry meter
 	if err := b.UserMeter(otel.GetMeterProvider().Meter("bundler")); err != nil {
 		logger.Error(err, "could not set up OTEL meter")
 		os.Exit(1)
@@ -254,6 +294,7 @@ func createBundlerClient(mem *mempool.Mempool, chainID *big.Int,
 	return b
 }
 
+// runDBGarbageCollection periodically runs garbage collection on the Badger database to manage value log size.
 func runDBGarbageCollection(db *badger.DB) {
 	go func(db *badger.DB) {
 		ticker := time.NewTicker(5 * time.Minute)
