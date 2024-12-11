@@ -160,7 +160,7 @@ func main() {
 	}
 
 	// Create ERC-4337 client
-	erc4337Client := createERC4337Client(mem, values, chain, eth, rpcClient, stdLogger, rep, validator)
+	erc4337Client := createERC4337Client(mem, values, chain, eth, rpcClient, stdLogger, rep, validator, db)
 
 	// Create bundler client
 	bundlerClient := createBundlerClient(mem, chain, values, eth, stdLogger)
@@ -237,12 +237,13 @@ func createERC4337Client(
 	rpcClient *rpc.Client,
 	logger logr.Logger,
 	rep *entities.Reputation,
-	validator *validations.Validator) *rpcHandler.Client {
+	validator *validations.Validator,
+	db *badger.DB) *rpcHandler.Client {
 
 	c := rpcHandler.NewClient(chainID, mem, values, gas.NewDefaultOverhead())
 
 	// Configure custom receipt and gas-related functions
-	c.SetGetUserOpReceiptFunc(receipt.GetUserOpReceiptWithEthClient(ethClient))
+	c.SetGetUserOpReceiptFunc(receipt.GetUserOpReceiptWithEthClient(ethClient, db))
 	c.SetGetGasPricesFunc(client.GetGasPricesWithEthClient(ethClient))
 	c.SetGetGasEstimateFunc(
 		client.GetGasEstimateWithEthClient(

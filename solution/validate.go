@@ -42,6 +42,8 @@ func (ei *IntentsHandler) ValidateIntents() modules.BatchHandlerFunc {
 		// Update status to SENT_TO_SOLVER before validation
 		for idx := range body.UserOpsExt {
 			body.UserOpsExt[idx].ProcessingStatus = pb.ProcessingStatus_PROCESSING_STATUS_SENT_TO_SOLVER
+			// store the status
+			ei.UpdateProcessingStatusInDB(ctx.Batch[idx], "", pb.ProcessingStatus_PROCESSING_STATUS_SENT_TO_SOLVER)
 		}
 
 		return ei.sendToSolverForValidation(body, ctx.Batch)
@@ -105,6 +107,9 @@ func (ei *IntentsHandler) sendToSolverForValidation(
 
 				// Mark as invalid if validation fails
 				body.UserOpsExt[idx].ProcessingStatus = pb.ProcessingStatus_PROCESSING_STATUS_INVALID
+
+				// store the status
+				ei.UpdateProcessingStatusInDB(batch[idx], "", pb.ProcessingStatus_PROCESSING_STATUS_INVALID)
 
 				ei.txHashes.Compute(unsolvedOpHash, func(oldValue srv.OpHashes, loaded bool) (newValue srv.OpHashes, delete bool) {
 					return srv.OpHashes{

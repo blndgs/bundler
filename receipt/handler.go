@@ -2,9 +2,14 @@ package receipt
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"math/big"
 
+	"github.com/blndgs/bundler/solution"
+	pb "github.com/blndgs/model/gen/go/proto/v1"
+	"github.com/dgraph-io/badger/v3"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -53,9 +58,9 @@ type GetUserOpReceiptFunc = func(hash string, ep common.Address, blkRange uint64
 
 // GetUserOpReceiptWithEthClient returns an implementation of GetUserOpReceiptFunc that relies on an eth
 // client to fetch a UserOperationReceipt.
-func GetUserOpReceiptWithEthClient(eth *ethclient.Client) GetUserOpReceiptFunc {
+func GetUserOpReceiptWithEthClient(eth *ethclient.Client, db *badger.DB) GetUserOpReceiptFunc {
 	return func(hash string, ep common.Address, blkRange uint64) (*UserOperationReceipt, error) {
-		return GetUserOperationReceipt(eth, hash, ep, blkRange)
+		return GetUserOperationReceipt(eth, db, hash, ep, blkRange)
 	}
 }
 
@@ -63,10 +68,12 @@ func GetUserOpReceiptWithEthClient(eth *ethclient.Client) GetUserOpReceiptFunc {
 // It filters the EntryPoint contract for UserOperationEvents and extracts associated transaction details.
 func GetUserOperationReceipt(
 	eth *ethclient.Client,
+	db *badger.DB,
 	userOpHash string,
 	entryPoint common.Address,
 	blkRange uint64,
 ) (*UserOperationReceipt, error) {
+	fmt.Printf("Looking up hash in DB: %s\n", userOpHash)
 	// Validate the provided UserOperation hash
 	if !filter.IsValidUserOpHash(userOpHash) {
 		//lint:ignore ST1005 This needs to match the bundler test spec.
@@ -95,7 +102,10 @@ func GetUserOperationReceipt(
 		if err != nil {
 			return nil, err
 		}
-
+		reason, err := getProcessingStatusFromDB(db, userOpHash)
+		if err != nil {
+			return nil, err
+		}
 		txnReceipt := &parsedTransaction{
 			BlockHash:         receipt.BlockHash,
 			BlockNumber:       hexutil.EncodeBig(receipt.BlockNumber),
@@ -109,7 +119,7 @@ func GetUserOperationReceipt(
 			EffectiveGasPrice: hexutil.EncodeBig(tx.GasPrice()),
 		}
 		return &UserOperationReceipt{
-			Reason:        "UserOperation executed successfully",
+			Reason:        reason,
 			UserOpHash:    it.Event.UserOpHash,
 			Sender:        it.Event.Sender,
 			Paymaster:     it.Event.Paymaster,
@@ -163,4 +173,68 @@ func filterUserOperationEvent(
 		[]common.Address{},
 		[]common.Address{},
 	)
+}
+
+// getProcessingStatusFromDB retrieves the processing status from the database for a given UserOpHash.
+// TODO:: we don't need to check both the prefixes
+// need to confirm unsolvedOpHash, currentOpHash changes
+func getProcessingStatusFromDB(db *badger.DB, userOpHash string) (string, error) {
+	var reason string
+	var unsolvedHash string
+
+	err := db.View(func(txn *badger.Txn) error {
+		// Step 1: Check if the hash is directly stored
+		statusKey := []byte(fmt.Sprintf("status-%s", userOpHash))
+		item, err := txn.Get(statusKey)
+		if err == nil {
+			// If found, retrieve the status
+			val, err := item.ValueCopy(nil)
+			if err != nil {
+				return err
+			}
+			var statusMap solution.UserOpStatusMap
+			if err := json.Unmarshal(val, &statusMap); err != nil {
+				return err
+			}
+			reason = statusMap.ProcessingStatus.String()
+			return nil
+		}
+
+		// Step 2: Check if the hash is a solved hash with a mapping
+		mapKey := []byte(fmt.Sprintf("map-solved-%s", userOpHash))
+		item, err = txn.Get(mapKey)
+		if err == nil {
+			// Retrieve the mapped unsolved hash
+			val, err := item.ValueCopy(nil)
+			if err != nil {
+				return err
+			}
+			unsolvedHash = string(val)
+
+			// Fetch status using the unsolved hash
+			statusKey = []byte(fmt.Sprintf("status-%s", unsolvedHash))
+			item, err = txn.Get(statusKey)
+			if err != nil {
+				return err
+			}
+			val, err = item.ValueCopy(nil)
+			if err != nil {
+				return err
+			}
+			var statusMap solution.UserOpStatusMap
+			if err := json.Unmarshal(val, &statusMap); err != nil {
+				return err
+			}
+			reason = statusMap.ProcessingStatus.String()
+			return nil
+		}
+
+		reason = pb.ProcessingStatus_PROCESSING_STATUS_UNSPECIFIED.String()
+		return nil
+	})
+
+	if err != nil {
+		return "", fmt.Errorf("failed to retrieve status from DB: %w", err)
+	}
+	return reason, nil
 }

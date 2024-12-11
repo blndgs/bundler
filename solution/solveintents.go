@@ -53,11 +53,10 @@ type batchOpIndex int
 type batchIntentIndices map[opHashID]batchOpIndex
 
 // userOpStatusMap struct is the structure for storing the user op status.
-type userOpStatusMap struct {
+type UserOpStatusMap struct {
 	OriginalUserOpHash string
-	SolverUserOpHash   string
+	SolvedUserOpHash   string
 	ProcessingStatus   pb.ProcessingStatus
-	SrcTxHash          string
 }
 
 type IntentsHandler struct {
@@ -90,23 +89,41 @@ func New(
 }
 
 // UpdateProcessingStatusInDB updates the processing status in the db.
+// TODO:: should be storing will on prefix
+// need to confirm unsolvedOpHash, currentOpHash changes
 func (ei *IntentsHandler) UpdateProcessingStatusInDB(
-	originalHash,
-	solvedHash,
-	srcTxHash string,
+	op *userop.UserOperation,
+	solvedHash string,
 	status pb.ProcessingStatus) error {
+	// Resolve hashes
+	currentOpHash, unsolvedOpHash := utils.GetUserOpHash(op, ei.ep, ei.chainID)
+
+	ei.logger.Info("UpdateProcessingStatusInDB", "currentOpHash", currentOpHash, "unsolvedOpHash", unsolvedOpHash, "status", status)
+
 	return ei.db.Update(func(txn *badger.Txn) error {
-		statusKey := []byte(fmt.Sprintf("status-%s", originalHash))
-		statusValue, err := json.Marshal(userOpStatusMap{
-			OriginalUserOpHash: originalHash,
-			SolverUserOpHash:   solvedHash,
+		// Store status under the unsolved hash
+		statusKey := []byte(fmt.Sprintf("status-%s", unsolvedOpHash))
+		statusValue, err := json.Marshal(UserOpStatusMap{
+			OriginalUserOpHash: unsolvedOpHash,
+			SolvedUserOpHash:   currentOpHash,
 			ProcessingStatus:   status,
-			SrcTxHash:          srcTxHash,
 		})
 		if err != nil {
 			return err
 		}
-		return txn.Set(statusKey, statusValue)
+		if err := txn.Set(statusKey, statusValue); err != nil {
+			return err
+		}
+
+		// Map solved hash back to unsolved hash
+		if currentOpHash != unsolvedOpHash {
+			mapKey := []byte(fmt.Sprintf("map-solved-%s", currentOpHash))
+			if err := txn.Set(mapKey, []byte(unsolvedOpHash)); err != nil {
+				return err
+			}
+		}
+
+		return nil
 	})
 }
 
@@ -133,7 +150,6 @@ func (ei *IntentsHandler) bufferIntentOps(entrypoint common.Address, chainID *bi
 				// ProcessingStatus set to `Received`.
 				ProcessingStatus: pb.ProcessingStatus_PROCESSING_STATUS_RECEIVED,
 			})
-
 			// Reverse caching
 			batchIndices[opHashID(hashID)] = batchOpIndex(idx)
 		}
@@ -158,6 +174,8 @@ func (ei *IntentsHandler) SolveIntents() modules.BatchHandlerFunc {
 		ei.logger.Info("Received batch of UserOperations for solution", "number", len(modelUserOps))
 		for idx, op := range modelUserOps {
 			ei.logger.Info("Received UserOperation", "index", idx, "isIntent", op.HasIntent(), "operation", op.String())
+			// store the status
+			ei.UpdateProcessingStatusInDB(ctx.Batch[idx], "", pb.ProcessingStatus_PROCESSING_STATUS_RECEIVED)
 		}
 
 		// Prepare the body to send to the Solver
@@ -206,6 +224,9 @@ func (ei *IntentsHandler) SolveIntents() modules.BatchHandlerFunc {
 				ctx.MarkOpIndexForRemoval(int(batchIndex), string("intent uo not solved:"+opExt.ProcessingStatus.String()))
 				ei.logger.Info("Solver dropping ops", "status", opExt.ProcessingStatus, "body", body.UserOps[idx].String())
 
+				// store the status
+				ei.UpdateProcessingStatusInDB(ctx.Batch[idx], "", opExt.ProcessingStatus)
+
 				err := pkgerrors.Errorf("unknown processing status: %s", opExt.ProcessingStatus)
 				computeHashFn(unsolvedOpHash, currentOpHash, err)
 
@@ -222,6 +243,9 @@ func (ei *IntentsHandler) SolveIntents() modules.BatchHandlerFunc {
 				ctx.Batch[batchIndex].MaxPriorityFeePerGas.Set(body.UserOps[idx].MaxPriorityFeePerGas)
 				// Mark as ready for chain submission
 				body.UserOpsExt[idx].ProcessingStatus = pb.ProcessingStatus_PROCESSING_STATUS_ON_CHAIN
+				// store the status
+				// TODO:: discuss solvedUserOpHash
+				ei.UpdateProcessingStatusInDB(ctx.Batch[idx], "", pb.ProcessingStatus_PROCESSING_STATUS_ON_CHAIN)
 			default:
 				err := pkgerrors.Errorf("unknown processing status: %s", opExt.ProcessingStatus)
 
