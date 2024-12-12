@@ -39,8 +39,14 @@ import (
 )
 
 // build time LDFlags
+// var (
+//
+//	CommitID, ModelVersion string
+//
+// )
 var (
-	CommitID, ModelVersion string
+	CommitID     = "development"
+	ModelVersion = "development"
 )
 
 func main() {

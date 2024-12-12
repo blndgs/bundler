@@ -25,5 +25,8 @@ go.work
 
 .env
 
+# vscode 
+/.vscode
+
 # Ignore build file (generated in the root folder)
 /bundler

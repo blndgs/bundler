@@ -89,8 +89,6 @@ func New(
 }
 
 // UpdateProcessingStatusInDB updates the processing status in the db.
-// TODO:: should be storing will on prefix
-// need to confirm unsolvedOpHash, currentOpHash changes
 func (ei *IntentsHandler) UpdateProcessingStatusInDB(
 	op *userop.UserOperation,
 	solvedHash string,
@@ -102,23 +100,23 @@ func (ei *IntentsHandler) UpdateProcessingStatusInDB(
 
 	return ei.db.Update(func(txn *badger.Txn) error {
 		// Store status under the unsolved hash
-		statusKey := []byte(fmt.Sprintf("status-%s", unsolvedOpHash))
+		statusKeyUnsolved := []byte(fmt.Sprintf("status-%s", unsolvedOpHash))
 		statusValue, err := json.Marshal(UserOpStatusMap{
-			OriginalUserOpHash: unsolvedOpHash,
-			SolvedUserOpHash:   currentOpHash,
+			OriginalUserOpHash: currentOpHash,
+			SolvedUserOpHash:   unsolvedOpHash,
 			ProcessingStatus:   status,
 		})
 		if err != nil {
 			return err
 		}
-		if err := txn.Set(statusKey, statusValue); err != nil {
+		if err := txn.Set(statusKeyUnsolved, statusValue); err != nil {
 			return err
 		}
 
-		// Map solved hash back to unsolved hash
+		// Only store statusKeyCurrent if currentOpHash != unsolvedOpHash
 		if currentOpHash != unsolvedOpHash {
-			mapKey := []byte(fmt.Sprintf("map-solved-%s", currentOpHash))
-			if err := txn.Set(mapKey, []byte(unsolvedOpHash)); err != nil {
+			statusKeyCurrent := []byte(fmt.Sprintf("status-%s", currentOpHash))
+			if err := txn.Set(statusKeyCurrent, statusValue); err != nil {
 				return err
 			}
 		}
