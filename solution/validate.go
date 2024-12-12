@@ -43,7 +43,9 @@ func (ei *IntentsHandler) ValidateIntents() modules.BatchHandlerFunc {
 		for idx := range body.UserOpsExt {
 			body.UserOpsExt[idx].ProcessingStatus = pb.ProcessingStatus_PROCESSING_STATUS_SENT_TO_SOLVER
 			// store the status
-			ei.UpdateProcessingStatusInDB(ctx.Batch[idx], "", pb.ProcessingStatus_PROCESSING_STATUS_SENT_TO_SOLVER)
+			if err := ei.UpdateProcessingStatusInDB(ctx.Batch[idx], "", pb.ProcessingStatus_PROCESSING_STATUS_SENT_TO_SOLVER); err != nil {
+				ei.logger.Error(err, "Failed to update processing status to SENT_TO_SOLVER in DB")
+			}
 		}
 
 		return ei.sendToSolverForValidation(body, ctx.Batch)
@@ -109,8 +111,9 @@ func (ei *IntentsHandler) sendToSolverForValidation(
 				body.UserOpsExt[idx].ProcessingStatus = pb.ProcessingStatus_PROCESSING_STATUS_INVALID
 
 				// store the status
-				ei.UpdateProcessingStatusInDB(batch[idx], "", pb.ProcessingStatus_PROCESSING_STATUS_INVALID)
-
+				if err := ei.UpdateProcessingStatusInDB(batch[idx], "", pb.ProcessingStatus_PROCESSING_STATUS_INVALID); err != nil {
+					ei.logger.Error(err, "Failed to update processing status to INVALID in DB")
+				}
 				ei.txHashes.Compute(unsolvedOpHash, func(oldValue srv.OpHashes, loaded bool) (newValue srv.OpHashes, delete bool) {
 					return srv.OpHashes{
 						Error:  errors.Join(oldValue.Error, err),

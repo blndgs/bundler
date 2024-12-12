@@ -173,7 +173,9 @@ func (ei *IntentsHandler) SolveIntents() modules.BatchHandlerFunc {
 		for idx, op := range modelUserOps {
 			ei.logger.Info("Received UserOperation", "index", idx, "isIntent", op.HasIntent(), "operation", op.String())
 			// store the status
-			ei.UpdateProcessingStatusInDB(ctx.Batch[idx], "", pb.ProcessingStatus_PROCESSING_STATUS_RECEIVED)
+			if err := ei.UpdateProcessingStatusInDB(ctx.Batch[idx], "", pb.ProcessingStatus_PROCESSING_STATUS_RECEIVED); err != nil {
+				ei.logger.Error(err, "Failed to update processing status to RECEIVED in DB")
+			}
 		}
 
 		// Prepare the body to send to the Solver
@@ -223,7 +225,9 @@ func (ei *IntentsHandler) SolveIntents() modules.BatchHandlerFunc {
 				ei.logger.Info("Solver dropping ops", "status", opExt.ProcessingStatus, "body", body.UserOps[idx].String())
 
 				// store the status
-				ei.UpdateProcessingStatusInDB(ctx.Batch[idx], "", opExt.ProcessingStatus)
+				if err := ei.UpdateProcessingStatusInDB(ctx.Batch[idx], "", opExt.ProcessingStatus); err != nil {
+					ei.logger.Error(err, "Failed to update processing status in DB")
+				}
 
 				err := pkgerrors.Errorf("unknown processing status: %s", opExt.ProcessingStatus)
 				computeHashFn(unsolvedOpHash, currentOpHash, err)
@@ -242,8 +246,9 @@ func (ei *IntentsHandler) SolveIntents() modules.BatchHandlerFunc {
 				// Mark as ready for chain submission
 				body.UserOpsExt[idx].ProcessingStatus = pb.ProcessingStatus_PROCESSING_STATUS_ON_CHAIN
 				// store the status
-				// TODO:: discuss solvedUserOpHash
-				ei.UpdateProcessingStatusInDB(ctx.Batch[idx], "", pb.ProcessingStatus_PROCESSING_STATUS_ON_CHAIN)
+				if err := ei.UpdateProcessingStatusInDB(ctx.Batch[idx], "", opExt.ProcessingStatus); err != nil {
+					ei.logger.Error(err, "Failed to update processing status in DB")
+				}
 			default:
 				err := pkgerrors.Errorf("unknown processing status: %s", opExt.ProcessingStatus)
 
