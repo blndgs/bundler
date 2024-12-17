@@ -2,13 +2,11 @@ package receipt
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"math/big"
 
-	"github.com/blndgs/bundler/solution"
-	"github.com/dgraph-io/badger/v3"
+	"github.com/blndgs/bundler/store"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -51,16 +49,16 @@ type parsedTransaction struct {
 type GetUserOpReceiptFunc = func(hash string, ep common.Address, blkRange uint64) (*UserOperationReceipt, error)
 
 // GetUserOpReceiptWithEthClient returns an implementation of GetUserOpReceiptFunc that relies on an eth client to fetch a UserOperationReceipt.
-func GetUserOpReceiptWithEthClient(eth *ethclient.Client, db *badger.DB) GetUserOpReceiptFunc {
+func GetUserOpReceiptWithEthClient(eth *ethclient.Client, store *store.BadgerStore) GetUserOpReceiptFunc {
 	return func(hash string, ep common.Address, blkRange uint64) (*UserOperationReceipt, error) {
-		return GetUserOperationReceipt(eth, db, hash, ep, blkRange)
+		return GetUserOperationReceipt(eth, store, hash, ep, blkRange)
 	}
 }
 
 // GetUserOperationReceipt retrieves the receipt for a specific UserOperation based on its hash.
 func GetUserOperationReceipt(
 	eth *ethclient.Client,
-	db *badger.DB,
+	store *store.BadgerStore,
 	userOpHash string,
 	entryPoint common.Address,
 	blkRange uint64,
@@ -68,11 +66,12 @@ func GetUserOperationReceipt(
 	if !filter.IsValidUserOpHash(userOpHash) {
 		return nil, errors.New("missing/invalid userOpHash")
 	}
+	ctx := context.Background()
 
 	// Retrieve status from DB
-	status, err := getProcessingStatusFromDB(db, userOpHash)
+	status, err := store.GetStatus(ctx, userOpHash)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to get status: %w", err)
 	}
 
 	// Try to retrieve the event and process it
@@ -82,8 +81,8 @@ func GetUserOperationReceipt(
 	}
 
 	// If not found, try with solved hash from status
-	if status.SolvedUserOpHash != "" && status.SolvedUserOpHash != userOpHash {
-		receipt, err = processEvent(eth, status.SolvedUserOpHash, entryPoint, blkRange, status)
+	if status.SolvedHash != "" && status.SolvedHash != userOpHash {
+		receipt, err = processEvent(eth, status.SolvedHash, entryPoint, blkRange, status)
 		if receipt != nil || err != nil {
 			return receipt, err
 		}
@@ -91,7 +90,7 @@ func GetUserOperationReceipt(
 
 	// If no events found, return a receipt with just the status
 	return &UserOperationReceipt{
-		Reason:     status.ProcessingStatus.String(),
+		Reason:     status.Status.String(),
 		UserOpHash: common.HexToHash(userOpHash),
 	}, nil
 }
@@ -102,7 +101,7 @@ func processEvent(
 	hash string,
 	entryPoint common.Address,
 	blkRange uint64,
-	status *solution.UserOpStatusMap,
+	status *store.Status,
 ) (*UserOperationReceipt, error) {
 	it, err := filterUserOperationEvent(eth, hash, entryPoint, blkRange)
 	if err != nil {
@@ -141,7 +140,7 @@ func processEvent(
 		}
 
 		return &UserOperationReceipt{
-			Reason:        status.ProcessingStatus.String(),
+			Reason:        status.Status.String(),
 			UserOpHash:    it.Event.UserOpHash,
 			Sender:        it.Event.Sender,
 			Paymaster:     it.Event.Paymaster,
@@ -190,34 +189,4 @@ func filterUserOperationEvent(
 		[]common.Address{},
 		[]common.Address{},
 	)
-}
-
-// getProcessingStatusFromDB retrieves the processing status from the database
-func getProcessingStatusFromDB(db *badger.DB, userOpHash string) (*solution.UserOpStatusMap, error) {
-	statusKey := []byte(fmt.Sprintf("status-%s", userOpHash))
-
-	var userOpStatus solution.UserOpStatusMap
-	err := db.View(func(txn *badger.Txn) error {
-		item, err := txn.Get(statusKey)
-		if err != nil {
-			if err == badger.ErrKeyNotFound {
-				return fmt.Errorf("status not found for hash: %s", userOpHash)
-			}
-			return err
-		}
-
-		// Extract the value from the item
-		return item.Value(func(val []byte) error {
-			if err := json.Unmarshal(val, &userOpStatus); err != nil {
-				return fmt.Errorf("failed to unmarshal status: %w", err)
-			}
-			return nil
-		})
-	})
-
-	if err != nil {
-		return nil, err
-	}
-
-	return &userOpStatus, nil
 }

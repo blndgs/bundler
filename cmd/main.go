@@ -35,6 +35,7 @@ import (
 	rpcHandler "github.com/blndgs/bundler/rpc"
 	"github.com/blndgs/bundler/solution"
 	"github.com/blndgs/bundler/srv"
+	"github.com/blndgs/bundler/store"
 	"github.com/blndgs/bundler/validations"
 )
 
@@ -100,6 +101,9 @@ func main() {
 	}
 	defer db.Close()
 
+	// Initialize BadgerStore with logger
+	store := store.NewBadgerStore(db, stdLogger)
+
 	runDBGarbageCollection(db)
 
 	// Initialize the mempool
@@ -159,14 +163,20 @@ func main() {
 	stdLogger.Info("Using solver url", "url", values.SolverURL)
 
 	// Set up the solver
-	solver := solution.New(values.SolverURL, stdLogger, relayer.GetOpHashes(), values.SupportedEntryPoints[0], chain, db)
+	solver := solution.New(
+		values.SolverURL,
+		stdLogger,
+		relayer.GetOpHashes(),
+		values.SupportedEntryPoints[0],
+		chain,
+		store)
 	if err := solver.ReportSolverHealth(values.SolverURL); err != nil {
 		stdLogger.Error(err, "could not verify Solver's healthcheck")
 		os.Exit(1)
 	}
 
 	// Create ERC-4337 client
-	erc4337Client := createERC4337Client(mem, values, chain, eth, rpcClient, stdLogger, rep, validator, db)
+	erc4337Client := createERC4337Client(mem, values, chain, eth, rpcClient, stdLogger, rep, validator, store)
 
 	// Create bundler client
 	bundlerClient := createBundlerClient(mem, chain, values, eth, stdLogger)
@@ -174,9 +184,13 @@ func main() {
 	check := validator.ToStandaloneCheck()
 
 	// Set up whitelist handler
-	whitelistHandler, whitelistCleanupFn := srv.CheckSenderWhitelist(db, values.WhiteListedAddresses,
-		stdLogger, relayer.GetOpHashes(),
-		values.SupportedEntryPoints[0], chain)
+	whitelistHandler, whitelistCleanupFn := srv.CheckSenderWhitelist(
+		store,
+		values.WhiteListedAddresses,
+		stdLogger,
+		relayer.GetOpHashes(),
+		values.SupportedEntryPoints[0],
+		chain)
 
 	if whitelistHandler == nil {
 		err := "could not set up sender whitelist middleware"
@@ -185,7 +199,9 @@ func main() {
 	}
 
 	// Set up transaction simulation handler
-	simulatorHandler := srv.SimulateTxWithTenderly(eoa, values,
+	simulatorHandler := srv.SimulateTxWithTenderly(
+		eoa,
+		values,
 		eth,
 		stdLogger,
 		relayer.GetOpHashes(),
@@ -244,12 +260,12 @@ func createERC4337Client(
 	logger logr.Logger,
 	rep *entities.Reputation,
 	validator *validations.Validator,
-	db *badger.DB) *rpcHandler.Client {
+	store *store.BadgerStore) *rpcHandler.Client {
 
 	c := rpcHandler.NewClient(chainID, mem, values, gas.NewDefaultOverhead())
 
 	// Configure custom receipt and gas-related functions
-	c.SetGetUserOpReceiptFunc(receipt.GetUserOpReceiptWithEthClient(ethClient, db))
+	c.SetGetUserOpReceiptFunc(receipt.GetUserOpReceiptWithEthClient(ethClient, store))
 	c.SetGetGasPricesFunc(client.GetGasPricesWithEthClient(ethClient))
 	c.SetGetGasEstimateFunc(
 		client.GetGasEstimateWithEthClient(
