@@ -16,6 +16,7 @@ package solution
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -26,6 +27,7 @@ import (
 	"unsafe"
 
 	"github.com/blndgs/bundler/srv"
+	"github.com/blndgs/bundler/store"
 	"github.com/blndgs/bundler/utils"
 	"github.com/blndgs/model"
 	"github.com/ethereum/go-ethereum/common"
@@ -56,13 +58,19 @@ type IntentsHandler struct {
 	SolverClient *http.Client
 	logger       logr.Logger
 	txHashes     *xsync.MapOf[string, srv.OpHashes]
+	store        *store.BadgerStore
 	ep           common.Address
 	chainID      *big.Int
 }
 
-func New(solverURL string, logger logr.Logger,
+// New creates a new instance of intent handler.
+func New(
+	solverURL string,
+	logger logr.Logger,
 	txHashes *xsync.MapOf[string, srv.OpHashes],
-	entrypoint common.Address, chainID *big.Int) *IntentsHandler {
+	entrypoint common.Address,
+	chainID *big.Int,
+	store *store.BadgerStore) *IntentsHandler {
 	return &IntentsHandler{
 		SolverURL:    solverURL,
 		SolverClient: &http.Client{Timeout: httpClientTimeout},
@@ -70,6 +78,7 @@ func New(solverURL string, logger logr.Logger,
 		txHashes:     txHashes,
 		ep:           entrypoint,
 		chainID:      chainID,
+		store:        store,
 	}
 }
 
@@ -96,7 +105,6 @@ func (ei *IntentsHandler) bufferIntentOps(entrypoint common.Address, chainID *bi
 				// ProcessingStatus set to `Received`.
 				ProcessingStatus: pb.ProcessingStatus_PROCESSING_STATUS_RECEIVED,
 			})
-
 			// Reverse caching
 			batchIndices[opHashID(hashID)] = batchOpIndex(idx)
 		}
@@ -121,6 +129,15 @@ func (ei *IntentsHandler) SolveIntents() modules.BatchHandlerFunc {
 		ei.logger.Info("Received batch of UserOperations for solution", "number", len(modelUserOps))
 		for idx, op := range modelUserOps {
 			ei.logger.Info("Received UserOperation", "index", idx, "isIntent", op.HasIntent(), "operation", op.String())
+			// store the status
+			currentOpHash, unsolvedOpHash := utils.GetUserOpHash(ctx.Batch[idx], ei.ep, ei.chainID)
+			if err := ei.store.UpdateStatus(
+				context.Background(),
+				currentOpHash,
+				unsolvedOpHash,
+				pb.ProcessingStatus_PROCESSING_STATUS_RECEIVED); err != nil {
+				ei.logger.Error(err, "Failed to update processing status to RECEIVED in DB")
+			}
 		}
 
 		// Prepare the body to send to the Solver
@@ -169,6 +186,15 @@ func (ei *IntentsHandler) SolveIntents() modules.BatchHandlerFunc {
 				ctx.MarkOpIndexForRemoval(int(batchIndex), string("intent uo not solved:"+opExt.ProcessingStatus.String()))
 				ei.logger.Info("Solver dropping ops", "status", opExt.ProcessingStatus, "body", body.UserOps[idx].String())
 
+				// store the status
+				if err := ei.store.UpdateStatus(
+					context.Background(),
+					currentOpHash,
+					unsolvedOpHash,
+					opExt.ProcessingStatus); err != nil {
+					ei.logger.Error(err, "Failed to update processing status in DB")
+				}
+
 				err := pkgerrors.Errorf("unknown processing status: %s", opExt.ProcessingStatus)
 				computeHashFn(unsolvedOpHash, currentOpHash, err)
 
@@ -185,6 +211,17 @@ func (ei *IntentsHandler) SolveIntents() modules.BatchHandlerFunc {
 				ctx.Batch[batchIndex].MaxPriorityFeePerGas.Set(body.UserOps[idx].MaxPriorityFeePerGas)
 				// Mark as ready for chain submission
 				body.UserOpsExt[idx].ProcessingStatus = pb.ProcessingStatus_PROCESSING_STATUS_ON_CHAIN
+				// store the status
+				// Get new hashes AFTER modifying the userOp
+				currentOpHash, solvedOpHash := utils.GetUserOpHash(ctx.Batch[idx], ei.ep, ei.chainID)
+				if err := ei.store.UpdateStatus(
+					context.Background(),
+					currentOpHash,
+					solvedOpHash,
+					pb.ProcessingStatus_PROCESSING_STATUS_ON_CHAIN); err != nil {
+					ei.logger.Error(err, "Failed to update processing status in DB")
+				}
+
 			default:
 				err := pkgerrors.Errorf("unknown processing status: %s", opExt.ProcessingStatus)
 
