@@ -14,6 +14,8 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/stackup-wallet/stackup-bundler/pkg/entrypoint"
 	"github.com/stackup-wallet/stackup-bundler/pkg/entrypoint/filter"
+
+	pb "github.com/blndgs/model/gen/go/proto/v1"
 )
 
 // UserOperationReceipt represents the receipt of a UserOperation along with accompanying transaction details.
@@ -126,6 +128,12 @@ func processEvent(
 			return nil, err
 		}
 
+		reason := status.Status.String()
+
+		if receipt.Status == types.ReceiptStatusFailed {
+			reason = pb.ProcessingStatus_PROCESSING_STATUS_ON_CHAIN_REVERT.String()
+		}
+
 		txnReceipt := &parsedTransaction{
 			BlockHash:         receipt.BlockHash,
 			BlockNumber:       hexutil.EncodeBig(receipt.BlockNumber),
@@ -140,7 +148,7 @@ func processEvent(
 		}
 
 		return &UserOperationReceipt{
-			Reason:        status.Status.String(),
+			Reason:        reason,
 			UserOpHash:    it.Event.UserOpHash,
 			Sender:        it.Event.Sender,
 			Paymaster:     it.Event.Paymaster,
