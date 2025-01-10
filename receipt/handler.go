@@ -134,6 +134,10 @@ func processEvent(
 			reason = pb.ProcessingStatus_PROCESSING_STATUS_ON_CHAIN_REVERT.String()
 		}
 
+		if !it.Event.Success {
+			reason = pb.ProcessingStatus_PROCESSING_STATUS_ON_CHAIN_REVERT.String()
+		}
+
 		txnReceipt := &parsedTransaction{
 			BlockHash:         receipt.BlockHash,
 			BlockNumber:       hexutil.EncodeBig(receipt.BlockNumber),
