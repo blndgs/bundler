@@ -130,11 +130,7 @@ func processEvent(
 
 		reason := status.Status.String()
 
-		if receipt.Status == types.ReceiptStatusFailed {
-			reason = pb.ProcessingStatus_PROCESSING_STATUS_ON_CHAIN_REVERT.String()
-		}
-
-		if !it.Event.Success {
+		if receipt.Status == types.ReceiptStatusFailed || !it.Event.Success {
 			reason = pb.ProcessingStatus_PROCESSING_STATUS_ON_CHAIN_REVERT.String()
 		}
 
