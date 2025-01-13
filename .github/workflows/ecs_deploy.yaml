@@ -171,7 +171,7 @@ jobs:
           cluster: ${{ secrets[format('{0}_ENV_NAME', env.PREFIX)] }}-backend
           service: ${{ secrets[format('{0}_ENV_NAME', env.PREFIX)] }}-bundler-${{ matrix.network }}
           task-definition: task-definition-${{ matrix.network }}.json
-          wait-for-service-stability: false
+          wait-for-service-stability: true
           wait-for-minutes: 5
 
   run-integration-tests:
