@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/blndgs/bundler/conf"
+	"github.com/blndgs/bundler/store"
 	"github.com/dgraph-io/badger/v3"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/go-logr/logr"
@@ -60,7 +61,7 @@ func TestCheckSenderWhitelist(t *testing.T) {
 		t.Run(v.name, func(t *testing.T) {
 			db, err := badger.Open(badger.DefaultOptions("").WithInMemory(true))
 			require.NoError(t, err)
-
+			store := store.NewBadgerStore(db, logr.Discard())
 			defer func() {
 				require.NoError(t, db.Close())
 			}()
@@ -71,7 +72,7 @@ func TestCheckSenderWhitelist(t *testing.T) {
 				whitelistedAddresses = append(whitelistedAddresses, common.HexToAddress(addr))
 			}
 
-			handler, teardownFn := CheckSenderWhitelist(db, whitelistedAddresses, logr.Discard(),
+			handler, teardownFn := CheckSenderWhitelist(store, whitelistedAddresses, logr.Discard(),
 				xsync.NewMapOf[string, OpHashes](),
 				common.HexToAddress(conf.EntrypointAddrV060), big.NewInt(1))
 			defer teardownFn()

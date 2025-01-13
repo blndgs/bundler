@@ -6,17 +6,13 @@ import (
 	"fmt"
 	"math/big"
 
+	"github.com/blndgs/bundler/store"
 	"github.com/blndgs/bundler/utils"
-	"github.com/dgraph-io/badger/v3"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/go-logr/logr"
 	"github.com/puzpuzpuz/xsync/v3"
 	"github.com/stackup-wallet/stackup-bundler/pkg/modules"
 )
-
-func getWhitelistKey(addr common.Address) string {
-	return fmt.Sprintf("whitelist-%s", addr.Hex())
-}
 
 // CheckSenderWhitelist is an handler that checks to limit on-chain userops to a set of
 // addresses. These addresses must be initialized on start up and they must be a comma seperated list
@@ -26,10 +22,13 @@ func getWhitelistKey(addr common.Address) string {
 // It also returns a function that acts as a clean up operation
 // We do not want to persist whitelisted addresses between restarts
 // They must always come fresh from the env variable
-func CheckSenderWhitelist(db *badger.DB,
+func CheckSenderWhitelist(
+	store *store.BadgerStore,
 	whitelistedAddresses []common.Address,
-	logger logr.Logger, txHashes *xsync.MapOf[string, OpHashes],
-	entrypointAddr common.Address, chainID *big.Int) (modules.BatchHandlerFunc, func() error) {
+	logger logr.Logger,
+	txHashes *xsync.MapOf[string, OpHashes],
+	entrypointAddr common.Address,
+	chainID *big.Int) (modules.BatchHandlerFunc, func() error) {
 
 	logger.Info("Setting up addresses in BadgerDB for whitelist checks")
 
@@ -37,28 +36,16 @@ func CheckSenderWhitelist(db *badger.DB,
 		logger.Info("Bundler address whitelisting enabled", "number_of_whitelisted_addresses", len(whitelistedAddresses))
 	}
 
+	// Initialize whitelist with provided addresses
 	// Use a single transaction to store all addresses
-	err := db.Update(func(txn *badger.Txn) error {
-		for _, addr := range whitelistedAddresses {
-			if err := txn.Set([]byte(getWhitelistKey(addr)), addr.Bytes()); err != nil {
-				logger.Error(err, "Failed to store address in DB for whitelisting", "address", addr.Hex())
-				return err
-			}
-
-			logger.Info("Address stored in DB whitelist", "address", addr.Hex())
-		}
-		return nil
-	})
-
-	if err != nil {
-		logger.Error(err, "Failed to store multiple addresses in BadgerDB")
+	if err := store.AddToWhitelist(context.Background(), whitelistedAddresses); err != nil {
+		logger.Error(err, "Failed to store addresses in BadgerDB")
 		return nil, func() error { return nil }
 	}
 
 	return func(ctx *modules.BatchHandlerCtx) error {
-
 			_, span := utils.GetTracer().
-				Start(context.Background(), "WithAdressWhitelist")
+				Start(context.Background(), "WithAddressWhitelist")
 			defer span.End()
 
 			if len(whitelistedAddresses) == 0 {
@@ -67,12 +54,13 @@ func CheckSenderWhitelist(db *badger.DB,
 			}
 
 			for idx, userop := range ctx.Batch {
-				senderKey := getWhitelistKey(userop.Sender)
-				err := db.View(func(txn *badger.Txn) error {
-					_, err := txn.Get([]byte(senderKey))
-					return err
-				})
+				isWhitelisted, err := store.IsWhitelisted(context.Background(), userop.Sender)
 				if err != nil {
+					logger.Error(err, "Error checking whitelist status", "address", userop.Sender.Hex())
+					return fmt.Errorf("whitelist check failed: %w", err)
+				}
+
+				if !isWhitelisted {
 					logger.Error(err, "Sender not found in whitelist; removing transaction from batch", "address", userop.Sender.Hex())
 					ctx.MarkOpIndexForRemoval(idx, "sender not whitelisted")
 
@@ -89,15 +77,7 @@ func CheckSenderWhitelist(db *badger.DB,
 
 			return nil
 		}, func() error {
-
-			return db.Update(func(txn *badger.Txn) error {
-				for _, addr := range whitelistedAddresses {
-					if err := txn.Delete([]byte(getWhitelistKey(addr))); err != nil {
-						logger.Error(err, "Failed to delete address in DB for whitelisting", "address", addr.Hex())
-						return err
-					}
-				}
-				return nil
-			})
+			// Cleanup function - remove all whitelisted addresses
+			return store.RemoveFromWhitelist(context.Background(), whitelistedAddresses)
 		}
 }
