@@ -14,6 +14,8 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/stackup-wallet/stackup-bundler/pkg/entrypoint"
 	"github.com/stackup-wallet/stackup-bundler/pkg/entrypoint/filter"
+
+	pb "github.com/blndgs/model/gen/go/proto/v1"
 )
 
 // UserOperationReceipt represents the receipt of a UserOperation along with accompanying transaction details.
@@ -75,14 +77,14 @@ func GetUserOperationReceipt(
 	}
 
 	// Try to retrieve the event and process it
-	receipt, err := processEvent(eth, userOpHash, entryPoint, blkRange, status)
+	receipt, err := processEvent(store, eth, userOpHash, entryPoint, blkRange, status)
 	if receipt != nil || err != nil {
 		return receipt, err
 	}
 
 	// If not found, try with solved hash from status
 	if status.SolvedHash != "" && status.SolvedHash != userOpHash {
-		receipt, err = processEvent(eth, status.SolvedHash, entryPoint, blkRange, status)
+		receipt, err = processEvent(store, eth, status.SolvedHash, entryPoint, blkRange, status)
 		if receipt != nil || err != nil {
 			return receipt, err
 		}
@@ -97,6 +99,7 @@ func GetUserOperationReceipt(
 
 // processEvent processes the UserOperationEvent and constructs the receipt.
 func processEvent(
+	store *store.BadgerStore,
 	eth *ethclient.Client,
 	hash string,
 	entryPoint common.Address,
@@ -126,6 +129,21 @@ func processEvent(
 			return nil, err
 		}
 
+		reason := status.Status.String()
+
+		if (receipt.Status == types.ReceiptStatusFailed || !it.Event.Success) &&
+			status.Status != pb.ProcessingStatus_PROCESSING_STATUS_ON_CHAIN_REVERT {
+
+			reason = pb.ProcessingStatus_PROCESSING_STATUS_ON_CHAIN_REVERT.String()
+
+			if err := store.UpdateStatus(context.Background(),
+				status.OriginalHash,
+				status.SolvedHash,
+				pb.ProcessingStatus_PROCESSING_STATUS_ON_CHAIN_REVERT); err != nil {
+				return nil, err
+			}
+		}
+
 		txnReceipt := &parsedTransaction{
 			BlockHash:         receipt.BlockHash,
 			BlockNumber:       hexutil.EncodeBig(receipt.BlockNumber),
@@ -140,7 +158,7 @@ func processEvent(
 		}
 
 		return &UserOperationReceipt{
-			Reason:        status.Status.String(),
+			Reason:        reason,
 			UserOpHash:    it.Event.UserOpHash,
 			Sender:        it.Event.Sender,
 			Paymaster:     it.Event.Paymaster,
