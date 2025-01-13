@@ -20,7 +20,6 @@ import (
 	"github.com/goccy/go-json"
 	"github.com/mitchellh/mapstructure"
 	"github.com/puzpuzpuz/xsync/v3"
-	"github.com/stackup-wallet/stackup-bundler/pkg/client"
 	"github.com/stackup-wallet/stackup-bundler/pkg/jsonrpc"
 	"github.com/stackup-wallet/stackup-bundler/pkg/userop"
 	"go.opentelemetry.io/otel/attribute"
@@ -54,7 +53,7 @@ const (
 
 // ExtERC4337Controller extends the default JSON-RPC controller to handle non-ERC4337 Ethereum RPC methods.
 func ExtERC4337Controller(hashesMap *xsync.MapOf[string, srv.OpHashes],
-	rpcAdapter *client.RpcAdapter, rpcClient *rpc.Client,
+	rpcAdapter *RpcAdapter, rpcClient *rpc.Client,
 	ethRPCClient *ethclient.Client, values *conf.Values,
 	logger logr.Logger) gin.HandlerFunc {
 
@@ -158,7 +157,7 @@ func isStdEthereumRPCMethod(method string) bool {
 	return !isBundlerMethod
 }
 
-func routeStdEthereumRPCRequest(ctx context.Context, c *gin.Context, rpcAdapter *client.RpcAdapter, method string,
+func routeStdEthereumRPCRequest(ctx context.Context, c *gin.Context, rpcAdapter *RpcAdapter, method string,
 	rpcClient *rpc.Client, ethClient *ethclient.Client, hashesMap *xsync.MapOf[string, srv.OpHashes],
 	requestData map[string]any, values *conf.Values, logger logr.Logger) {
 
@@ -435,7 +434,7 @@ func waitForUserOpCompletion(ctx context.Context, ethClient *ethclient.Client,
 	}
 }
 
-func handleEthSendUserOperation(ctx context.Context, c *gin.Context, rpcAdapter *client.RpcAdapter,
+func handleEthSendUserOperation(ctx context.Context, c *gin.Context, rpcAdapter *RpcAdapter,
 	ethClient *ethclient.Client, hashesMap *xsync.MapOf[string, srv.OpHashes], requestData map[string]any,
 	values *conf.Values, logger logr.Logger) {
 
